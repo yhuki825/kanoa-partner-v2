@@ -1,0 +1,28 @@
+# Netlify 設定（ビルド不要の静的サイト）
+[build]
+  publish = "."
+
+# HTMLは常に最新を取得
+[[headers]]
+  for = "/*.html"
+  [headers.values]
+    Cache-Control = "no-cache"
+
+# JS/CSSは毎回サーバーへ確認（ETagで未変更なら304・開発中のキャッシュ事故防止と同じ思想）
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "public, max-age=0, must-revalidate"
+
+# セキュリティヘッダ
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
