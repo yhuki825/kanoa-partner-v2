@@ -84,3 +84,6 @@
 .msg-row .msg { max-width: 100%; }
 .msg-row .msg-meta { color: var(--c-text-sub); opacity: 1; margin-top: 2px; }
 .msg-row .msg-reactions { margin-top: 3px; }
+
+/* ---- V1準拠タイポグラフィ: 数字はJetBrains Mono ---- */
+.stat .num { font-family: var(--font-mono); letter-spacing: -0.02em; }

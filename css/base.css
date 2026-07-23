@@ -3,17 +3,19 @@
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
 :root {
-  /* 色（Phase 4のテーマ選定で差し替えやすいよう変数に集約） */
-  --c-bg: #f5f6f8;
+  /* 色: V1準拠（Inter×インディゴ。2026-07-23 ユーザー指定「fonts.css準拠」） */
+  --c-bg: #f7f7f8;
   --c-surface: #ffffff;
-  --c-border: #e3e6ea;
-  --c-text: #1f2429;
-  --c-text-sub: #6b7480;
-  --c-primary: #0f6bff;
+  --c-border: #ededf0;
+  --c-text: #17171b;
+  --c-text-sub: #8a8d95;
+  --c-primary: #4f46e5;
+  --c-primary-soft: #eef0fe;
   --c-primary-ink: #ffffff;
-  --c-danger: #d64545;
-  --c-ok: #1d9e6f;
-  --c-warn: #c98a1b;
+  --c-danger: #be123c;
+  --c-ok: #15803d;
+  --c-warn: #b45309;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
   /* 寸法 */
   --radius: 10px;
   --shadow: 0 1px 3px rgba(20, 30, 40, .08), 0 4px 16px rgba(20, 30, 40, .06);
@@ -23,7 +25,7 @@
 
 html, body { height: 100%; }
 body {
-  font-family: "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
+  font-family: 'Inter', "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic", Meiryo, system-ui, sans-serif;
   font-size: 14px; line-height: 1.6;
   color: var(--c-text); background: var(--c-bg);
   -webkit-font-smoothing: antialiased;
@@ -47,7 +49,7 @@ input, select, textarea { font: inherit; color: inherit; }
   padding: 9px 12px; border-radius: 8px; border: none; background: none;
   color: var(--c-text); text-align: left; width: 100%; font-size: 13.5px;
 }
-.nav-item:hover { background: #eef1f5; }
+.nav-item:hover { background: var(--c-primary-soft); }
 .nav-item.active { background: var(--c-primary); color: var(--c-primary-ink); }
 .nav-item .badge { margin-left: auto; }
 .sidebar .spacer { flex: 1; }
