@@ -1,0 +1,74 @@
+/* ============ components.css — 共通UI部品 ============ */
+
+/* ボタン */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 9px 16px; border-radius: 8px; border: 1px solid var(--c-border);
+  background: var(--c-surface); color: var(--c-text); font-size: 13.5px;
+  transition: filter .12s;
+}
+.btn:hover { filter: brightness(.97); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.btn-primary { background: var(--c-primary); border-color: var(--c-primary); color: var(--c-primary-ink); }
+.btn-danger { background: var(--c-danger); border-color: var(--c-danger); color: #fff; }
+.btn-block { width: 100%; }
+
+/* カード */
+.card {
+  background: var(--c-surface); border: 1px solid var(--c-border);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 18px;
+}
+.card + .card { margin-top: 14px; }
+.card h2 { font-size: 15px; margin-bottom: 12px; }
+
+/* フォーム */
+.field { display: flex; flex-direction: column; gap: 5px; margin-bottom: 14px; }
+.field label { font-size: 12.5px; color: var(--c-text-sub); font-weight: 600; }
+.field input, .field select, .field textarea {
+  padding: 9px 12px; border: 1px solid var(--c-border); border-radius: 8px;
+  background: var(--c-surface); outline: none;
+}
+.field input:focus, .field select:focus, .field textarea:focus {
+  border-color: var(--c-primary); box-shadow: 0 0 0 3px rgba(15, 107, 255, .12);
+}
+.field .err { color: var(--c-danger); font-size: 12px; }
+
+/* バッジ */
+.badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 18px; height: 18px; padding: 0 6px; border-radius: 9px;
+  background: var(--c-danger); color: #fff; font-size: 11px; font-weight: 700;
+}
+.badge.badge-muted { background: var(--c-text-sub); }
+
+/* トースト */
+#toast-root { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 100; display: flex; flex-direction: column; gap: 8px; }
+.toast {
+  background: #23292f; color: #fff; padding: 10px 18px; border-radius: 8px;
+  box-shadow: var(--shadow); font-size: 13px; animation: toast-in .18s ease-out;
+}
+.toast.ok { background: var(--c-ok); }
+.toast.err { background: var(--c-danger); }
+@keyframes toast-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; } }
+
+/* モーダル */
+#modal-root:empty { display: none; }
+.modal-back {
+  position: fixed; inset: 0; background: rgba(15, 20, 25, .45); z-index: 50;
+  display: grid; place-items: center; padding: 20px;
+}
+.modal {
+  background: var(--c-surface); border-radius: 12px; box-shadow: var(--shadow);
+  width: 100%; max-width: 480px; max-height: 85dvh; overflow: auto; padding: 22px;
+}
+.modal h3 { font-size: 15px; margin-bottom: 14px; }
+.modal .modal-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 18px; }
+
+/* テーブル */
+.table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.table th { text-align: left; color: var(--c-text-sub); font-weight: 600; padding: 8px 10px; border-bottom: 1px solid var(--c-border); }
+.table td { padding: 10px; border-bottom: 1px solid var(--c-border); }
+.table tr:hover td { background: #f8fafc; }
+
+/* 空状態 */
+.empty { text-align: center; color: var(--c-text-sub); padding: 40px 10px; }
