@@ -7,8 +7,12 @@ import { renderLogin } from './features/auth/login.js';
 import './features/dashboard/dashboard.js';
 import './features/relay/relay.js';
 import './features/candidates/candidates.js';
+import './features/projects/projects.js';
 import './features/companies/companies.js';
-// Phase 3以降で追加: projects / chat / invoices / tasks / settings
+import './features/chat/chat.js';
+import './features/invoices/invoices.js';
+import './features/tasks/tasks.js';
+import './features/settings/settings.js';
 
 async function boot() {
   const authed = await restoreAuth();

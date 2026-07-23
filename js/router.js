@@ -20,7 +20,7 @@ function currentPath() {
 export function mountApp() {
   const app = document.getElementById('app');
   const navItems = [...routes.entries()]
-    .filter(([, d]) => d.nav && (!d.roles || d.roles.includes(S.role)));
+    .filter(([, d]) => d.nav && (!d.roles || d.roles.includes(S.role)) && (!d.when || d.when()));
 
   const who = S.role === 'kanoa'
     ? 'KANOA 管理'

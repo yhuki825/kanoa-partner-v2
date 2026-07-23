@@ -21,3 +21,32 @@
 }
 .stat .num { font-size: 26px; font-weight: 700; }
 .stat .label { font-size: 12px; color: var(--c-text-sub); }
+
+/* ---- 連絡チャット ---- */
+.chat-layout { display: grid; grid-template-columns: 260px 1fr; gap: 14px; height: calc(100dvh - var(--topbar-h) - 40px); }
+.chat-threads { padding: 10px; overflow-y: auto; }
+.thread-item {
+  display: flex; justify-content: space-between; align-items: center; gap: 8px;
+  width: 100%; padding: 11px 12px; border: none; background: none; border-radius: 8px;
+  text-align: left; font-size: 13px;
+}
+.thread-item:hover { background: #eef1f5; }
+.thread-item.active { background: var(--c-primary); color: #fff; }
+.chat-conv { display: flex; flex-direction: column; padding: 0; overflow: hidden; }
+.chat-conv[hidden] { display: none; }
+.conv-header { padding: 12px 16px; border-bottom: 1px solid var(--c-border); font-weight: 700; }
+.conv-body { flex: 1; overflow-y: auto; padding: 14px; display: flex; flex-direction: column; gap: 8px; }
+.msg { max-width: 72%; padding: 8px 12px; border-radius: 12px; font-size: 13.5px; }
+.msg.mine { align-self: flex-end; background: var(--c-primary); color: #fff; border-bottom-right-radius: 4px; }
+.msg.other { align-self: flex-start; background: #eef1f5; border-bottom-left-radius: 4px; }
+.msg-reply { font-size: 11.5px; opacity: .75; border-left: 2px solid currentColor; padding-left: 6px; margin-bottom: 4px; }
+.msg-meta { font-size: 10.5px; opacity: .7; margin-top: 3px; }
+.msg-meta a { color: inherit; text-decoration: underline; margin-left: 6px; }
+.reply-bar { display: flex; align-items: center; gap: 8px; padding: 6px 12px; border-top: 1px solid var(--c-border); font-size: 12px; color: var(--c-text-sub); }
+.composer { display: flex; gap: 8px; padding: 10px 12px; border-top: 1px solid var(--c-border); }
+.composer textarea { flex: 1; padding: 9px 12px; border: 1px solid var(--c-border); border-radius: 8px; resize: none; }
+@media (max-width: 760px) {
+  .chat-layout { grid-template-columns: 1fr; height: calc(100dvh - var(--topbar-h) - 150px); }
+  .chat-threads { max-height: 130px; }
+}
+.reply-bar[hidden] { display: none; }

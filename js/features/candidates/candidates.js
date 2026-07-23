@@ -17,11 +17,15 @@ function progressLabel(cand) {
   return '終了';
 }
 
-function registerModal(onDone) {
+async function registerModal(onDone) {
+  // 共有されている募集中の案件（希望案件として選択可）
+  const { data: pjs } = await sb().from('projects_v2').select('id,name').eq('status', 'open').order('name');
+  const pjOptions = (pjs || []).map((p) => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
   const m = openModal(`
     <h3>求職者を登録</h3>
     <form id="cand-form">
       <div class="field"><label>氏名 *</label><input name="name" required></div>
+      ${pjOptions ? `<div class="field"><label>希望案件</label><select name="project_id"><option value="">未定</option>${pjOptions}</select></div>` : ''}
       <div class="field"><label>フリガナ</label><input name="kana"></div>
       <div class="field"><label>電話番号</label><input name="phone" type="tel"></div>
       <div class="field"><label>メールアドレス</label><input name="email" type="email"></div>
@@ -39,7 +43,7 @@ function registerModal(onDone) {
     const f = new FormData(e.target);
     const btn = e.target.querySelector('.btn-primary');
     btn.disabled = true;
-    const payload = Object.fromEntries(['name','kana','phone','email','address','area','note'].map((k) => [k, f.get(k) || null]));
+    const payload = Object.fromEntries(['name','kana','phone','email','address','area','note','project_id'].map((k) => [k, f.get(k) || null]));
     const { error } = await sb().rpc('v2_register_candidate', { p: payload });
     if (error) {
       const msg = /duplicate|unique/i.test(error.message)
