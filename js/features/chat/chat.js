@@ -1,16 +1,20 @@
 // 連絡チャット: スレッド = 企業⇔そのアップライン（Aラインの相手はKANOA）
-// 自分が「上側」か「下側」かで sender の見え方を切り替える
-//   - 自社スレッド（相手=アップ）: 自分の発言 = 'self'
-//   - フロントのスレッド（相手=フロント）: 自分の発言 = 'up'
-import { register, setBadge } from '../../router.js';
+// 送信は「送信ボタン」または ⌘/Ctrl+Enter のみ（Enter単体は改行・誤送信防止）
+// 機能: 返信・編集・削除・既読・リアクション・ピン留め・スタンプ・候補者カード紐づけ
+import { register } from '../../router.js';
 import { sb } from '../../supabase.js';
 import { S } from '../../store.js';
 import { esc, fmtDateTime } from '../../ui/format.js';
-import { toast, confirmDialog } from '../../ui/components.js';
+import { toast, confirmDialog, openModal } from '../../ui/components.js';
+
+const REACTIONS = ['👍', '✅', '🙏', '😄', '🎉'];
+const STAMPS = ['👍', '🙏', '🎉', '💪', '😄', '🙇', '✨', '⭕', '❌', '⏰'];
 
 let currentThread = null;   // { companyId, name, mySide: 'self'|'up' }
 let rtChannel = null;
 let pollTimer = null;
+let replyTo = null;
+let attachedCand = null;    // { id, name } 送信時に紐づける候補者
 
 /* ---------- スレッド一覧 ---------- */
 async function threadList() {
@@ -19,7 +23,6 @@ async function threadList() {
   const threads = [];
 
   if (!isAdmin) {
-    // 自社スレッド（相手=アップライン。tier1ならKANOA）
     const { data: me } = await c.from('companies').select('parent_id').eq('id', S.company.id).single();
     let upName = 'KANOA';
     if (me?.parent_id) {
@@ -29,7 +32,6 @@ async function threadList() {
     threads.push({ companyId: S.company.id, name: `${upName}（アップ）`, mySide: 'self' });
   }
 
-  // フロント各社のスレッド（admin: Aライン全社）
   let q = c.from('companies').select('id,code,name').eq('status', 'active').order('code');
   q = isAdmin ? q.eq('tier', 1) : q.eq('parent_id', S.company.id);
   const { data: fronts } = await q;
@@ -37,7 +39,6 @@ async function threadList() {
     companyId: x.id, name: `${x.name}（${x.code}）`, mySide: 'up',
   }));
 
-  // 未読数（相手側の発言で read=false）
   const ids = threads.map((t) => t.companyId);
   if (ids.length) {
     const { data: unread } = await c.from('messages_v2')
@@ -53,17 +54,35 @@ async function threadList() {
 }
 
 /* ---------- メッセージ描画 ---------- */
-function msgHtml(msg, mySide, replyMap) {
+function reactionsHtml(msg, mySide) {
+  const rx = Array.isArray(msg.reactions) ? msg.reactions : [];
+  if (!rx.length) return '';
+  const grouped = {};
+  rx.forEach((r) => { grouped[r.emoji] = (grouped[r.emoji] || []).concat(r.by); });
+  return `<div class="msg-reactions">${Object.entries(grouped).map(([e, bys]) =>
+    `<button class="rx ${bys.includes(mySide) ? 'on' : ''}" data-rx="${msg.id}" data-emoji="${e}">${e}${bys.length > 1 ? bys.length : ''}</button>`
+  ).join('')}</div>`;
+}
+
+function msgHtml(msg, mySide, replyMap, candMap) {
   if (msg.deleted) return `<div class="msg other" style="opacity:.55"><i>削除されたメッセージ</i></div>`;
   const mine = msg.sender === mySide;
   const reply = msg.reply_to && replyMap[msg.reply_to];
+  const cand = msg.candidate_id && candMap[msg.candidate_id];
   return `
-    <div class="msg ${mine ? 'mine' : 'other'}" data-msg="${msg.id}">
-      ${reply ? `<div class="msg-reply">↩ ${esc((reply.body || '').slice(0, 40))}</div>` : ''}
-      <div class="msg-body">${esc(msg.body || '')}</div>
+    <div class="msg ${mine ? 'mine' : 'other'} ${msg.stamp ? 'is-stamp' : ''}" data-msg="${msg.id}">
+      ${msg.pinned ? '<span class="msg-pin">📌</span>' : ''}
+      ${cand ? `<div class="msg-cand">👤 ${esc(cand)}</div>` : ''}
+      ${reply ? `<div class="msg-reply">↩ ${esc((reply.stamp || reply.body || '').slice(0, 40))}</div>` : ''}
+      ${msg.stamp ? `<div class="msg-stamp">${esc(msg.stamp)}</div>` : `<div class="msg-body">${esc(msg.body || '')}</div>`}
+      ${reactionsHtml(msg, mySide)}
       <div class="msg-meta">
         ${fmtDateTime(msg.created_at)}${msg.edited ? '・編集済み' : ''}${mine && msg.read ? '・既読' : ''}
-        ${mine ? `<a href="#" data-edit="${msg.id}">編集</a> <a href="#" data-del="${msg.id}">削除</a>` : `<a href="#" data-reply="${msg.id}">返信</a>`}
+        <a href="#" data-react="${msg.id}">😊</a>
+        <a href="#" data-pin="${msg.id}">${msg.pinned ? 'ピン解除' : 'ピン'}</a>
+        ${mine
+          ? `${msg.stamp ? '' : `<a href="#" data-edit="${msg.id}">編集</a>`} <a href="#" data-del="${msg.id}">削除</a>`
+          : `<a href="#" data-reply="${msg.id}">返信</a>`}
       </div>
     </div>`;
 }
@@ -75,16 +94,39 @@ async function loadConversation(el, thread) {
   if (error) { toast('読み込みに失敗しました', 'err'); return; }
 
   const replyMap = Object.fromEntries((msgs || []).map((x) => [x.id, x]));
+
+  // 紐づく候補者名を解決
+  const candIds = [...new Set((msgs || []).map((x) => x.candidate_id).filter(Boolean))];
+  let candMap = {};
+  if (candIds.length) {
+    const { data: cands } = await c.from('candidates').select('id,name').in('id', candIds);
+    candMap = Object.fromEntries((cands || []).map((x) => [x.id, x.name]));
+  }
+
+  // ピン留めバー
+  const pinned = (msgs || []).filter((x) => x.pinned && !x.deleted);
+  const pinBar = el.querySelector('#pin-bar');
+  pinBar.hidden = !pinned.length;
+  pinBar.innerHTML = pinned.slice(-3).map((x) =>
+    `<a href="#" data-jump="${x.id}">📌 ${esc((x.stamp || x.body || '').slice(0, 30))}</a>`).join('');
+
   const body = el.querySelector('#conv-body');
-  body.innerHTML = (msgs || []).map((x) => msgHtml(x, thread.mySide, replyMap)).join('')
+  body.innerHTML = (msgs || []).map((x) => msgHtml(x, thread.mySide, replyMap, candMap)).join('')
     || '<div class="empty">まだメッセージはありません</div>';
   body.scrollTop = body.scrollHeight;
 
-  // 相手の未読メッセージを既読化
   const unreadIds = (msgs || []).filter((x) => x.sender !== thread.mySide && !x.read).map((x) => x.id);
   if (unreadIds.length) await c.from('messages_v2').update({ read: true }).in('id', unreadIds);
 
-  // 返信・編集・削除
+  const reload = () => loadConversation(el, thread);
+
+  pinBar.querySelectorAll('[data-jump]').forEach((a) => {
+    a.onclick = (e) => {
+      e.preventDefault();
+      const t = body.querySelector(`[data-msg="${a.dataset.jump}"]`);
+      if (t) { t.scrollIntoView({ behavior: 'smooth', block: 'center' }); t.classList.add('flash'); setTimeout(() => t.classList.remove('flash'), 1200); }
+    };
+  });
   body.querySelectorAll('[data-reply]').forEach((a) => {
     a.onclick = (e) => { e.preventDefault(); setReplyTo(el, replyMap[a.dataset.reply]); };
   });
@@ -95,7 +137,7 @@ async function loadConversation(el, thread) {
       const text = prompt('メッセージを編集', msg.body || '');
       if (text == null || text === msg.body) return;
       await c.from('messages_v2').update({ body: text, edited: true }).eq('id', msg.id);
-      loadConversation(el, thread);
+      reload();
     };
   });
   body.querySelectorAll('[data-del]').forEach((a) => {
@@ -103,22 +145,101 @@ async function loadConversation(el, thread) {
       e.preventDefault();
       if (!await confirmDialog('このメッセージを削除しますか？', { okLabel: '削除', danger: true })) return;
       await c.from('messages_v2').update({ deleted: true }).eq('id', a.dataset.del);
-      loadConversation(el, thread);
+      reload();
     };
+  });
+  body.querySelectorAll('[data-pin]').forEach((a) => {
+    a.onclick = async (e) => {
+      e.preventDefault();
+      const msg = replyMap[a.dataset.pin];
+      await c.from('messages_v2').update({ pinned: !msg.pinned }).eq('id', msg.id);
+      reload();
+    };
+  });
+  // リアクション: 絵文字ピッカーを出してトグル
+  const toggleReaction = async (msg, emoji) => {
+    const rx = Array.isArray(msg.reactions) ? [...msg.reactions] : [];
+    const i = rx.findIndex((r) => r.emoji === emoji && r.by === thread.mySide);
+    if (i >= 0) rx.splice(i, 1); else rx.push({ emoji, by: thread.mySide });
+    await c.from('messages_v2').update({ reactions: rx }).eq('id', msg.id);
+    reload();
+  };
+  body.querySelectorAll('[data-react]').forEach((a) => {
+    a.onclick = (e) => {
+      e.preventDefault();
+      const msg = replyMap[a.dataset.react];
+      const pop = document.createElement('div');
+      pop.className = 'emoji-pop';
+      pop.innerHTML = REACTIONS.map((x) => `<button>${x}</button>`).join('');
+      a.closest('.msg').appendChild(pop);
+      pop.querySelectorAll('button').forEach((b) => { b.onclick = () => { pop.remove(); toggleReaction(msg, b.textContent); }; });
+      setTimeout(() => document.addEventListener('click', function h(ev) {
+        if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('click', h); }
+      }), 0);
+    };
+  });
+  body.querySelectorAll('.rx').forEach((b) => {
+    b.onclick = () => toggleReaction(replyMap[b.dataset.rx], b.dataset.emoji);
   });
 }
 
-let replyTo = null;
 function setReplyTo(el, msg) {
   replyTo = msg?.id || null;
   const bar = el.querySelector('#reply-bar');
   if (msg) {
     bar.hidden = false;
-    bar.querySelector('span').textContent = `↩ ${(msg.body || '').slice(0, 50)}`;
+    bar.querySelector('span').textContent = `↩ ${(msg.stamp || msg.body || '').slice(0, 50)}`;
   } else bar.hidden = true;
 }
 
-/* ---------- リアルタイム＋保険ポーリング（V1の思想を継承） ---------- */
+function setAttachedCand(el, cand) {
+  attachedCand = cand;
+  const bar = el.querySelector('#cand-bar');
+  if (cand) {
+    bar.hidden = false;
+    bar.querySelector('span').textContent = `👤 ${cand.name} についての連絡`;
+  } else bar.hidden = true;
+}
+
+/* ---------- 候補者ピッカー（この会話に関係する候補者） ---------- */
+async function candPicker(el, thread) {
+  const c = sb();
+  // この会話の相手企業（または自社）が「登録した／送客した」候補者 = 会話に関係する候補者
+  const ownerId = thread.mySide === 'self' ? S.company.id : thread.companyId;
+  const { data: steps } = await c.from('candidate_steps')
+    .select('candidate_id').eq('company_id', ownerId).in('action', ['registered', 'forwarded'])
+    .order('created_at', { ascending: false }).limit(100);
+  const ids = [...new Set((steps || []).map((x) => x.candidate_id))].slice(0, 50);
+  let cands = [];
+  if (ids.length) {
+    const { data } = await c.from('candidates').select('id,name,stage').in('id', ids);
+    cands = data || [];
+  }
+  if (!cands.length) { toast('紐づけられる求職者がいません', 'err'); return; }
+  const m = openModal(`
+    <h3>求職者を紐づける</h3>
+    ${cands.map((x) => `<button class="btn btn-block" style="justify-content:flex-start;margin-bottom:6px" data-c="${x.id}">👤 ${esc(x.name)}</button>`).join('')}
+    <div class="modal-actions"><button class="btn" data-act="cancel">キャンセル</button></div>`);
+  m.el.querySelector('[data-act="cancel"]').onclick = () => m.close();
+  m.el.querySelectorAll('[data-c]').forEach((b) => {
+    b.onclick = () => { setAttachedCand(el, cands.find((x) => x.id === b.dataset.c)); m.close(); };
+  });
+}
+
+/* ---------- 送信 ---------- */
+async function send(el, { body = null, stamp = null }) {
+  if (!currentThread) return;
+  const { error } = await sb().from('messages_v2').insert({
+    company_id: currentThread.companyId, sender: currentThread.mySide,
+    body, stamp, reply_to: replyTo, candidate_id: attachedCand?.id || null,
+  });
+  if (error) { toast(`送信に失敗しました（${error.message}）`, 'err'); return false; }
+  setReplyTo(el, null); setAttachedCand(el, null);
+  loadConversation(el, currentThread);
+  return true;
+}
+
+/* ---------- リアルタイム＋保険ポーリング ---------- */
 function subscribe(el, thread) {
   unsubscribe();
   try {
@@ -127,7 +248,6 @@ function subscribe(el, thread) {
         () => loadConversation(el, thread))
       .subscribe();
   } catch {}
-  // 保険: 15秒ごと（Realtimeが死んでいても会話が止まらない）
   pollTimer = setInterval(() => {
     if (document.visibilityState === 'visible' && currentThread === thread) loadConversation(el, thread);
   }, 15000);
@@ -139,8 +259,9 @@ function unsubscribe() {
 
 /* ---------- 画面 ---------- */
 async function render(el) {
-  unsubscribe(); currentThread = null; replyTo = null;
+  unsubscribe(); currentThread = null; replyTo = null; attachedCand = null;
   const threads = await threadList();
+  const sendKey = navigator.platform.includes('Mac') ? '⌘+Enter' : 'Ctrl+Enter';
 
   el.innerHTML = `
     <div class="chat-layout">
@@ -153,10 +274,14 @@ async function render(el) {
       </div>
       <div class="chat-conv card" id="conv" hidden>
         <div class="conv-header" id="conv-title"></div>
+        <div class="pin-bar" id="pin-bar" hidden></div>
         <div class="conv-body" id="conv-body"></div>
         <div class="reply-bar" id="reply-bar" hidden><span></span><button class="btn" id="reply-cancel">×</button></div>
+        <div class="reply-bar" id="cand-bar" hidden><span></span><button class="btn" id="cand-cancel">×</button></div>
         <form class="composer" id="composer">
-          <textarea name="body" rows="1" placeholder="メッセージを入力（送信ボタンで送信）"></textarea>
+          <button type="button" class="btn" id="btn-cand" title="求職者を紐づける">👤</button>
+          <button type="button" class="btn" id="btn-stamp" title="スタンプ">🏷️</button>
+          <textarea name="body" rows="1" placeholder="メッセージを入力（${sendKey}で送信）"></textarea>
           <button class="btn btn-primary">送信</button>
         </form>
       </div>
@@ -164,7 +289,7 @@ async function render(el) {
     </div>`;
 
   const open = async (t) => {
-    currentThread = t; replyTo = null;
+    currentThread = t; setReplyTo(el, null); setAttachedCand(el, null);
     el.querySelector('#conv-empty').style.display = 'none';
     const conv = el.querySelector('#conv');
     conv.hidden = false;
@@ -174,33 +299,42 @@ async function render(el) {
     subscribe(el, t);
   };
 
-  el.querySelectorAll('.thread-item').forEach((b) => {
-    b.onclick = () => open(threads[b.dataset.idx]);
-  });
-
+  el.querySelectorAll('.thread-item').forEach((b) => { b.onclick = () => open(threads[b.dataset.idx]); });
   el.querySelector('#reply-cancel').onclick = (e) => { e.preventDefault(); setReplyTo(el, null); };
+  el.querySelector('#cand-cancel').onclick = (e) => { e.preventDefault(); setAttachedCand(el, null); };
+  el.querySelector('#btn-cand').onclick = () => { if (currentThread) candPicker(el, currentThread); };
+
+  // スタンプピッカー
+  el.querySelector('#btn-stamp').onclick = (e) => {
+    if (!currentThread) return;
+    const old = el.querySelector('.stamp-pop');
+    if (old) { old.remove(); return; }
+    const pop = document.createElement('div');
+    pop.className = 'stamp-pop';
+    pop.innerHTML = STAMPS.map((x) => `<button>${x}</button>`).join('');
+    el.querySelector('#composer').appendChild(pop);
+    pop.querySelectorAll('button').forEach((b) => {
+      b.onclick = () => { pop.remove(); send(el, { stamp: b.textContent }); };
+    });
+  };
 
   const composer = el.querySelector('#composer');
   const ta = composer.querySelector('textarea');
-  // Enterは改行のみ。送信は必ず「送信」ボタンで行う（文の途中での誤送信防止・ユーザー指定）
   ta.addEventListener('input', () => {
     ta.rows = Math.min(6, Math.max(1, ta.value.split('\n').length));
   });
+  // 送信: ボタン or ⌘/Ctrl+Enter（Enter単体は改行のみ・誤送信防止）
+  ta.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) { e.preventDefault(); composer.requestSubmit(); }
+  });
   composer.onsubmit = async (e) => {
     e.preventDefault();
-    if (!currentThread) return;
     const body = ta.value.trim();
     if (!body) return;
-    ta.value = '';
-    const { error } = await sb().from('messages_v2').insert({
-      company_id: currentThread.companyId, sender: currentThread.mySide, body, reply_to: replyTo,
-    });
-    setReplyTo(el, null);
-    if (error) { toast(`送信に失敗しました（${error.message}）`, 'err'); ta.value = body; return; }
-    loadConversation(el, currentThread);
+    ta.value = ''; ta.rows = 1;
+    if (!await send(el, { body })) ta.value = body;
   };
 
-  // 最初のスレッドを自動で開く（1件しかない場合に迷わせない）
   if (threads.length === 1) open(threads[0]);
 }
 

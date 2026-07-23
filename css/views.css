@@ -50,3 +50,29 @@
   .chat-threads { max-height: 130px; }
 }
 .reply-bar[hidden] { display: none; }
+
+/* ---- チャット拡張（リアクション・ピン・スタンプ・候補者チップ） ---- */
+.pin-bar { display: flex; flex-direction: column; gap: 2px; padding: 6px 14px; border-bottom: 1px solid var(--c-border); background: #fffbe8; font-size: 12px; }
+.pin-bar[hidden] { display: none; }
+.pin-bar a { color: var(--c-text); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.msg { position: relative; }
+.msg.flash { outline: 2px solid var(--c-warn); }
+.msg-pin { position: absolute; top: -8px; right: 6px; font-size: 12px; }
+.msg-cand { font-size: 11.5px; font-weight: 700; background: rgba(255,255,255,.25); border: 1px solid currentColor; border-radius: 6px; padding: 2px 6px; margin-bottom: 4px; display: inline-block; }
+.msg.other .msg-cand { background: #fff; border-color: var(--c-border); }
+.msg.is-stamp { background: none !important; color: inherit !important; padding: 0; }
+.msg-stamp { font-size: 44px; line-height: 1.2; }
+.msg-reactions { display: flex; gap: 4px; margin-top: 4px; flex-wrap: wrap; }
+.msg-reactions .rx { border: 1px solid var(--c-border); background: var(--c-surface); color: var(--c-text); border-radius: 10px; padding: 1px 7px; font-size: 12px; cursor: pointer; }
+.msg-reactions .rx.on { border-color: var(--c-primary); background: #e8f0ff; }
+.emoji-pop, .stamp-pop {
+  position: absolute; z-index: 5; display: flex; gap: 4px; flex-wrap: wrap;
+  background: var(--c-surface); border: 1px solid var(--c-border); border-radius: 10px;
+  padding: 6px; box-shadow: var(--shadow);
+}
+.emoji-pop { bottom: -34px; left: 0; }
+.stamp-pop { position: absolute; bottom: 54px; left: 12px; max-width: 260px; }
+.emoji-pop button, .stamp-pop button { border: none; background: none; font-size: 20px; cursor: pointer; padding: 3px; }
+.stamp-pop button { font-size: 26px; }
+.composer { position: relative; }
+.composer .btn { padding: 9px 10px; }
