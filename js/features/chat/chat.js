@@ -65,16 +65,18 @@ function reactionsHtml(msg, mySide) {
 }
 
 function msgHtml(msg, mySide, replyMap, candMap) {
-  if (msg.deleted) return `<div class="msg other" style="opacity:.55"><i>削除されたメッセージ</i></div>`;
+  if (msg.deleted) return `<div class="msg-row other"><div class="msg other" style="opacity:.55"><i>削除されたメッセージ</i></div></div>`;
   const mine = msg.sender === mySide;
   const reply = msg.reply_to && replyMap[msg.reply_to];
   const cand = msg.candidate_id && candMap[msg.candidate_id];
   return `
-    <div class="msg ${mine ? 'mine' : 'other'} ${msg.stamp ? 'is-stamp' : ''}" data-msg="${msg.id}">
-      ${msg.pinned ? '<span class="msg-pin">📌</span>' : ''}
-      ${cand ? `<div class="msg-cand">👤 ${esc(cand)}</div>` : ''}
-      ${reply ? `<div class="msg-reply">↩ ${esc((reply.stamp || reply.body || '').slice(0, 40))}</div>` : ''}
-      ${msg.stamp ? `<div class="msg-stamp">${esc(msg.stamp)}</div>` : `<div class="msg-body">${esc(msg.body || '')}</div>`}
+    <div class="msg-row ${mine ? 'mine' : 'other'}" data-msg="${msg.id}">
+      <div class="msg ${mine ? 'mine' : 'other'} ${msg.stamp ? 'is-stamp' : ''}">
+        ${msg.pinned ? '<span class="msg-pin">📌</span>' : ''}
+        ${cand ? `<div class="msg-cand">👤 ${esc(cand)}</div>` : ''}
+        ${reply ? `<div class="msg-reply">↩ ${esc((reply.stamp || reply.body || '').slice(0, 40))}</div>` : ''}
+        ${msg.stamp ? `<div class="msg-stamp">${esc(msg.stamp)}</div>` : `<div class="msg-body">${esc(msg.body || '')}</div>`}
+      </div>
       ${reactionsHtml(msg, mySide)}
       <div class="msg-meta">
         ${fmtDateTime(msg.created_at)}${msg.edited ? '・編集済み' : ''}${mine && msg.read ? '・既読' : ''}
@@ -171,7 +173,7 @@ async function loadConversation(el, thread) {
       const pop = document.createElement('div');
       pop.className = 'emoji-pop';
       pop.innerHTML = REACTIONS.map((x) => `<button>${x}</button>`).join('');
-      a.closest('.msg').appendChild(pop);
+      a.closest('.msg-row').appendChild(pop);
       pop.querySelectorAll('button').forEach((b) => { b.onclick = () => { pop.remove(); toggleReaction(msg, b.textContent); }; });
       setTimeout(() => document.addEventListener('click', function h(ev) {
         if (!pop.contains(ev.target)) { pop.remove(); document.removeEventListener('click', h); }
@@ -263,9 +265,12 @@ async function render(el) {
   const threads = await threadList();
   const sendKey = navigator.platform.includes('Mac') ? '⌘+Enter' : 'Ctrl+Enter';
 
+  const fronts = threads.filter((t) => t.mySide === 'up');
+
   el.innerHTML = `
     <div class="chat-layout">
       <div class="chat-threads card" id="thread-list">
+        ${fronts.length >= 2 ? '<button class="btn btn-block" id="btn-bc" style="margin-bottom:8px">📢 一斉連絡</button>' : ''}
         ${threads.map((t, i) => `
           <button class="thread-item" data-idx="${i}">
             <span>${esc(t.name)}</span>
@@ -300,6 +305,36 @@ async function render(el) {
   };
 
   el.querySelectorAll('.thread-item').forEach((b) => { b.onclick = () => open(threads[b.dataset.idx]); });
+
+  // 一斉連絡: 自分のフロント全社（KANOAはAライン全社）へ同じメッセージを送る
+  const bcBtn = el.querySelector('#btn-bc');
+  if (bcBtn) bcBtn.onclick = () => {
+    const m = openModal(`
+      <h3>📢 一斉連絡（${fronts.length}社へ送信）</h3>
+      <p style="font-size:12.5px;color:var(--c-text-sub);margin-bottom:8px">
+        ${fronts.map((t) => esc(t.name)).join('、')} の各スレッドに同じメッセージが送られます。</p>
+      <form id="bc-form">
+        <div class="field"><textarea name="body" rows="4" required placeholder="お知らせ内容を入力"></textarea></div>
+        <div class="modal-actions">
+          <button type="button" class="btn" data-act="cancel">キャンセル</button>
+          <button class="btn btn-primary">${fronts.length}社へ送信</button>
+        </div>
+      </form>`);
+    m.el.querySelector('[data-act="cancel"]').onclick = () => m.close();
+    m.el.querySelector('#bc-form').onsubmit = async (e) => {
+      e.preventDefault();
+      const body = new FormData(e.target).get('body').trim();
+      if (!body) return;
+      const btn = e.target.querySelector('.btn-primary');
+      btn.disabled = true;
+      const rows = fronts.map((t) => ({ company_id: t.companyId, sender: 'up', body }));
+      const { error } = await sb().from('messages_v2').insert(rows);
+      if (error) { toast(`送信に失敗しました（${error.message}）`, 'err'); btn.disabled = false; return; }
+      toast(`${fronts.length}社へ送信しました`, 'ok');
+      m.close();
+      if (currentThread) loadConversation(el, currentThread);
+    };
+  };
   el.querySelector('#reply-cancel').onclick = (e) => { e.preventDefault(); setReplyTo(el, null); };
   el.querySelector('#cand-cancel').onclick = (e) => { e.preventDefault(); setAttachedCand(el, null); };
   el.querySelector('#btn-cand').onclick = () => { if (currentThread) candPicker(el, currentThread); };

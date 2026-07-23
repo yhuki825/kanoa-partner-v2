@@ -76,3 +76,11 @@
 .stamp-pop button { font-size: 26px; }
 .composer { position: relative; }
 .composer .btn { padding: 9px 10px; }
+
+/* ---- チャット: 吹き出しの外にリアクション・メタ情報を出すレイアウト ---- */
+.msg-row { position: relative; display: flex; flex-direction: column; max-width: 72%; }
+.msg-row.mine { align-self: flex-end; align-items: flex-end; }
+.msg-row.other { align-self: flex-start; align-items: flex-start; }
+.msg-row .msg { max-width: 100%; }
+.msg-row .msg-meta { color: var(--c-text-sub); opacity: 1; margin-top: 2px; }
+.msg-row .msg-reactions { margin-top: 3px; }
