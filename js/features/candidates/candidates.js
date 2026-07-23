@@ -4,15 +4,20 @@ import { sb } from '../../supabase.js';
 import { S } from '../../store.js';
 import { esc, fmtDate } from '../../ui/format.js';
 import { toast, openModal } from '../../ui/components.js';
+import { docsModal } from '../../ui/docs.js';
 
 // 進捗の見せ方: リレー中は「どこまで進んだか」、KANOA到着後は選考ステータス
+const SELECTION_LABEL = {
+  entry: '送客済', screening: '書類選考', interview: '選考会',
+  offer: '内定', joined: '入社', rejected: '見送り', declined: '辞退',
+};
 function progressLabel(cand) {
   if (cand.stage === 'relay') {
     return cand.holder_id === S.company?.id
       ? '自社で確認中'
       : cand.holder_id ? 'アップライン側で確認中' : 'KANOA確認待ち';
   }
-  if (cand.stage === 'screening') return `KANOA選考中（${cand.status || '確認中'}）`;
+  if (cand.stage === 'screening') return `KANOA選考中（${SELECTION_LABEL[cand.status] || cand.status || '—'}）`;
   if (cand.stage === 'rejected') return '見送り';
   return '終了';
 }
@@ -68,6 +73,7 @@ async function render(el) {
       <td>${esc(x.area || '—')}</td>
       <td>${esc(progressLabel(x))}</td>
       <td>${fmtDate(x.created_at)}</td>
+      <td><button class="btn" data-docs="${x.id}">📎 書類</button></td>
     </tr>`).join('');
 
   el.innerHTML = `
@@ -77,10 +83,16 @@ async function render(el) {
         <button class="btn btn-primary" id="btn-add">＋ 求職者を登録</button>
       </div>
       ${rows ? `<div style="overflow-x:auto"><table class="table">
-        <tr><th>氏名</th><th>希望エリア</th><th>進捗</th><th>登録日</th></tr>${rows}</table></div>`
+        <tr><th>氏名</th><th>希望エリア</th><th>進捗</th><th>登録日</th><th></th></tr>${rows}</table></div>`
       : `<div class="empty">まだ求職者がいません。「求職者を登録」から登録すると、あなたのアップラインへ送られます。</div>`}
     </div>`;
   el.querySelector('#btn-add').onclick = () => registerModal(() => render(el));
+  el.querySelectorAll('[data-docs]').forEach((b) => {
+    b.onclick = () => {
+      const cand = (cands || []).find((x) => x.id === b.dataset.docs);
+      if (cand) docsModal(cand);
+    };
+  });
 }
 
 register('candidates', {

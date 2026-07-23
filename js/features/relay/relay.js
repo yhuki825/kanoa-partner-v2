@@ -6,6 +6,7 @@ import { sb } from '../../supabase.js';
 import { S } from '../../store.js';
 import { esc, fmtDate, fmtDateTime } from '../../ui/format.js';
 import { toast, openModal, confirmDialog } from '../../ui/components.js';
+import { docsModal } from '../../ui/docs.js';
 
 const ACTION_LABEL = { registered: '登録', forwarded: '送客', rejected: '見送り', accepted: 'KANOA受入' };
 
@@ -74,10 +75,12 @@ async function detailModal(cand, nameMap, onDone) {
     <ul style="list-style:none;margin-bottom:4px">${stepsHtml || '<li>—</li>'}</ul>
     <div class="modal-actions">
       <button class="btn" data-act="close">閉じる</button>
+      <button class="btn" data-act="docs">📎 書類</button>
       <button class="btn btn-danger" data-act="reject">見送る</button>
       <button class="btn btn-primary" data-act="go">${isAdmin ? '受け入れて選考へ' : 'アップラインへ送客'}</button>
     </div>`);
   m.el.querySelector('[data-act="close"]').onclick = () => m.close();
+  m.el.querySelector('[data-act="docs"]').onclick = () => docsModal(cand);
   m.el.querySelector('[data-act="reject"]').onclick = () => { m.close(); decide(cand.id, 'reject', onDone); };
   m.el.querySelector('[data-act="go"]').onclick = () => { m.close(); decide(cand.id, isAdmin ? 'accept' : 'forward', onDone); };
 }

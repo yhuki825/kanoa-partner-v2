@@ -6,6 +6,7 @@ import { renderLogin } from './features/auth/login.js';
 // featureの登録（import するだけでルートが router に登録される）
 import './features/dashboard/dashboard.js';
 import './features/relay/relay.js';
+import './features/screening/screening.js';
 import './features/candidates/candidates.js';
 import './features/projects/projects.js';
 import './features/companies/companies.js';

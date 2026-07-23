@@ -156,7 +156,7 @@ async function render(el) {
         <div class="conv-body" id="conv-body"></div>
         <div class="reply-bar" id="reply-bar" hidden><span></span><button class="btn" id="reply-cancel">×</button></div>
         <form class="composer" id="composer">
-          <textarea name="body" rows="1" placeholder="メッセージを入力（Enterで送信 / Shift+Enterで改行）"></textarea>
+          <textarea name="body" rows="1" placeholder="メッセージを入力（送信ボタンで送信）"></textarea>
           <button class="btn btn-primary">送信</button>
         </form>
       </div>
@@ -182,8 +182,9 @@ async function render(el) {
 
   const composer = el.querySelector('#composer');
   const ta = composer.querySelector('textarea');
-  ta.addEventListener('keydown', (e) => {
-    if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); composer.requestSubmit(); }
+  // Enterは改行のみ。送信は必ず「送信」ボタンで行う（文の途中での誤送信防止・ユーザー指定）
+  ta.addEventListener('input', () => {
+    ta.rows = Math.min(6, Math.max(1, ta.value.split('\n').length));
   });
   composer.onsubmit = async (e) => {
     e.preventDefault();
