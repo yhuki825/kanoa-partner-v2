@@ -1,38 +1,16 @@
 // Supabaseクライアント管理
-// ・KANOA管理者: supabase.auth のセッションをそのまま使う
-// ・パートナー: Edge Function発行のJWTを Authorization ヘッダに載せる
+// 管理者もパートナーも Supabase Auth のセッションを使う（パートナーのセッションは
+// Edge Function partner-login が code+pw 照合後に発行する）
 import { createClient } from 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/+esm';
-import { CONFIG, TOKEN_KEY } from './config.js';
+import { CONFIG } from './config.js';
 
 let _client = null;
-let _partnerToken = null;
-
-export function getPartnerToken() {
-  if (_partnerToken) return _partnerToken;
-  try { _partnerToken = localStorage.getItem(TOKEN_KEY); } catch { /* private mode等 */ }
-  return _partnerToken;
-}
-
-export function setPartnerToken(token) {
-  _partnerToken = token;
-  try { token ? localStorage.setItem(TOKEN_KEY, token) : localStorage.removeItem(TOKEN_KEY); } catch {}
-  _client = null;  // ヘッダ構成が変わるため作り直し
-}
-
-// JWTペイロードの取り出し（署名検証はサーバー側の仕事。ここでは表示・期限判定のみ）
-export function parseJwt(token) {
-  try {
-    const b64 = token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/');
-    return JSON.parse(decodeURIComponent(escape(atob(b64))));
-  } catch { return null; }
-}
 
 export function sb() {
   if (_client) return _client;
-  const token = getPartnerToken();
-  _client = createClient(CONFIG.SB_URL, CONFIG.SB_ANON_KEY, token
-    ? { global: { headers: { Authorization: `Bearer ${token}` } }, auth: { persistSession: false, autoRefreshToken: false } }
-    : { auth: { persistSession: true, storageKey: 'kanoa_v2_admin' } });
+  _client = createClient(CONFIG.SB_URL, CONFIG.SB_ANON_KEY, {
+    auth: { persistSession: true, storageKey: 'kanoa_v2_auth' },
+  });
   return _client;
 }
 

@@ -6,6 +6,9 @@
 -- ============================================================
 
 -- ---------- 共通ヘルパー ----------
+-- (関数本体の検証をテーブル作成後まで遅延させる。定義順の制約を無くすため)
+set check_function_bodies = off;
+
 create or replace function v2_claim(key text) returns text
 language sql stable as $$
   select nullif(current_setting('request.jwt.claims', true), '')::jsonb ->> key

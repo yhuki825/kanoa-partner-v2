@@ -4,6 +4,9 @@
 -- ・候補者登録／送客リレー（トランザクション保証のRPC）
 -- ・パスワード照合ヘルパー（pgcrypto bcrypt。Edge Functionから使用）
 -- ============================================================
+-- (関数本体の検証をテーブル作成後まで遅延させる。定義順の制約を無くすため)
+set check_function_bodies = off;
+
 create extension if not exists pgcrypto;
 
 -- ---------- 階層→頭文字（1=A .. 26=Z, 27=AA .. 702=ZZ。Excel列名と同じ規則） ----------
@@ -110,12 +113,12 @@ grant execute on function v2_relay_decide(uuid, text, text) to anon, authenticat
 
 -- ---------- パスワード関連（Edge Function から service_role で呼ぶ。クライアント実行不可） ----------
 create or replace function v2_hash_pw(p_plain text) returns text
-language sql as $$ select crypt(p_plain, gen_salt('bf', 10)) $$;
+language sql set search_path = public, extensions as $$ select crypt(p_plain, gen_salt('bf', 10)) $$;
 revoke all on function v2_hash_pw(text) from public, anon, authenticated;
 
 -- 照合: 成功なら company行(json)を返す。V1移行分は legacy(SHA-256) 照合→bcryptへ自動再ハッシュ
 create or replace function v2_verify_login(p_code text, p_pw text, p_legacy_hash text default null)
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare v companies%rowtype;
 begin
   select * into v from companies where code = upper(p_code);
@@ -140,7 +143,7 @@ revoke all on function v2_verify_login(text, text, text) from public, anon, auth
 -- 一時パスワード照合→companies行作成→invite消込 を1トランザクションで行う
 create or replace function v2_accept_invite(p_code text, p_temp_pw text, p_new_pw text,
                                             p_contact text, p_email text, p_phone text)
-returns jsonb language plpgsql security definer set search_path = public as $$
+returns jsonb language plpgsql security definer set search_path = public, extensions as $$
 declare inv invites%rowtype; v_parent uuid; v_id uuid;
 begin
   select * into inv from invites where code = upper(p_code) for update;
@@ -167,3 +170,9 @@ begin
   return jsonb_build_object('id', v_id, 'tier', inv.tier, 'code', inv.code, 'name', inv.company_name);
 end $$;
 revoke all on function v2_accept_invite(text, text, text, text, text, text) from public, anon, authenticated;
+
+-- Edge Function（service_role）からの実行権限
+grant execute on function v2_verify_login(text, text, text) to service_role;
+grant execute on function v2_hash_pw(text) to service_role;
+grant execute on function v2_accept_invite(text, text, text, text, text, text) to service_role;
+grant execute on function v2_next_code(int) to service_role;
