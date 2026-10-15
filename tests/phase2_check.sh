@@ -10,13 +10,18 @@ AK=sb_publishable_fBK1T1Xhx1Luj-OjbzFvaQ_4pUgNOms
 TOKEN=$(security find-generic-password -s "Supabase CLI" -w)
 TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
 pass=0; fail=0
-ok(){ if [ "$2" = "$3" ]; then echo "PASS  $1"; pass=$((pass+1)); else echo "FAIL  $1  期待=[$3] 実際=[$2]"; fail=$((fail+1)); fi; }
+# 判定: 受け取る値は「名前・実際・期待」の3つちょうど。ずれていたら必ず不合格にする（引数ずれによる見逃し防止）
+ok(){ if [ "$#" -ne 3 ]; then echo "FAIL  $1  （テストの書き方の誤り: 値が$#個）"; fail=$((fail+1)); return; fi
+  if [ "$2" = "$3" ]; then echo "PASS  $1"; pass=$((pass+1)); else echo "FAIL  $1  期待=[$3] 実際=[$2]"; fail=$((fail+1)); fi; }
 login(){ curl -s -X POST "$BASE/auth/v1/token?grant_type=password" -H "apikey: $AK" -H "Content-Type: application/json" \
   -d "{\"email\":\"$(echo "$1" | tr 'A-Z' 'a-z')@id.kanoa-portal.invalid\",\"password\":\"$2\"}" | python3 -c "import json,sys;print(json.load(sys.stdin).get('access_token',''))"; }
 get(){ curl -s "$BASE/rest/v1/$2" -H "apikey: $AK" -H "Authorization: Bearer $1"; }
 len(){ python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d) if isinstance(d,list) else 'ERR:'+str(d)[:80])"; }
 field(){ python3 -c "import json,sys;d=json.load(sys.stdin);print(d[0].get(sys.argv[1]) if isinstance(d,list) and d else ('none' if isinstance(d,list) else 'ERR'))" "$1"; }
 code(){ python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('code') or d.get('statusCode') or d.get('error') or 'none')"; }
+# 問い合わせ用のJSONを組み立てる（bash 3.2 は $( ) の中の \" を正しく読めないため、引用符を入れ子にしない）
+# 使い方: j キー 値 キー 値 …（値を = で始めると、数値・null・配列などをそのまま入れる）
+j(){ python3 -c 'import json,sys;a=sys.argv[1:];print(json.dumps({a[i]:(json.loads(a[i+1][1:]) if a[i+1].startswith("=") else a[i+1]) for i in range(0,len(a),2)},ensure_ascii=False))' "$@"; }
 sql(){ python3 -c "import json,sys;print(json.dumps({'query':sys.argv[1]}))" "$1" > "$TMP/q.json"
   curl -s -X POST "https://api.supabase.com/v1/projects/oicpfsfvywdhdriqehyr/database/query" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @"$TMP/q.json"; }
 
@@ -35,7 +40,7 @@ ok "非公開のテスト求人はA社に見えない"               "$(get "$A"
 J2=$(sql "select id from v2_jobs where title like '非公開%'" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["id"])')
 ok "偽の行で非公開求人の紹介料を引き出せない"        "$(curl -s -X POST "$BASE/rest/v1/rpc/v2_my_fee" -H "apikey: $AK" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d "{\"j\":{\"id\":\"$J2\"}}")" "null"
 ok "代表でないCAはフロント提示額を変えられない（0件更新）" "$(curl -s -X PATCH "$BASE/rest/v1/v2_job_offers?job_id=eq.$JOB" -H "apikey: $AK" -H "Authorization: Bearer $C" -H 'Content-Type: application/json' -H 'Prefer: return=representation' -d '{"fee_display":1}' | len)" "0"
-ok "CAはKANOA→1次の公開行を作れない"                 "$(curl -s -X POST "$BASE/rest/v1/v2_job_shares" -H "apikey: $AK" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d "{\"job_id\":\"$J2\",\"company_id\":\"$(sql "select id from v2_companies where code='A99999'" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["id"])')\"}" | code)" "42501"
+ok "CAはKANOA→1次の公開行を作れない"                 "$(curl -s -X POST "$BASE/rest/v1/v2_job_shares" -H "apikey: $AK" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d "$(j job_id "$J2" company_id "$(sql "select id from v2_companies where code='A99999'" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["id"])')")" | code)" "42501"
 
 echo "== 求職者・メモ・書類 =="
 ok "A社の別CAも自社の求職者が見える"                 "$(get "$C" "v2_candidates?select=name&id=eq.$CAND" | field name)" "テスト花子"
@@ -48,8 +53,8 @@ ok "A社は自社の書類ファイルを取得できる"             "$(curl -s
 ok "B社はA社の求職者の場所に書類を置けない"           "$(curl -s -X POST "$BASE/storage/v1/object/v2-files/candidates/$CAND/evil.pdf" -H "apikey: $AK" -H "Authorization: Bearer $B" -H 'Content-Type: application/pdf' --data-binary 'x' -o /dev/null -w '%{http_code}')" "400"
 ok "未ログインでは書類を取得できない"               "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/storage/v1/object/authenticated/v2-files/$FILEPATH" -H "apikey: $AK")" "400"
 ok "B社はA社の求職者を書き換えられない（0件更新）"     "$(curl -s -X PATCH "$BASE/rest/v1/v2_candidates?id=eq.$CAND" -H "apikey: $AK" -H "Authorization: Bearer $B" -H 'Content-Type: application/json' -H 'Prefer: return=representation' -d '{"name":"x"}' | len)" "0"
-ok "同じ電話番号（表記違い）は二重登録できない"      "$(curl -s -X POST "$BASE/rest/v1/v2_candidates" -H "apikey: $AK" -H "Authorization: Bearer $B" -H 'Content-Type: application/json' -d "{\"name\":\"重複テスト\",\"phone\":\"09000001111\",\"owner_company_id\":\"$(sql "select id from v2_companies where code='B00001'" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["id"])')\"}" | code)" "23505"
-ok "他社を持ち主にして登録できない"                  "$(curl -s -X POST "$BASE/rest/v1/v2_candidates" -H "apikey: $AK" -H "Authorization: Bearer $B" -H 'Content-Type: application/json' -d "{\"name\":\"なりすまし\",\"owner_company_id\":\"$(sql "select id from v2_companies where code='A99999'" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["id"])')\"}" | code)" "42501"
+ok "同じ電話番号（表記違い）は二重登録できない"      "$(curl -s -X POST "$BASE/rest/v1/v2_candidates" -H "apikey: $AK" -H "Authorization: Bearer $B" -H 'Content-Type: application/json' -d "$(j name "重複テスト" phone "09000001111" owner_company_id "$(sql "select id from v2_companies where code='B00001'" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["id"])')")" | code)" "23505"
+ok "他社を持ち主にして登録できない"                  "$(curl -s -X POST "$BASE/rest/v1/v2_candidates" -H "apikey: $AK" -H "Authorization: Bearer $B" -H 'Content-Type: application/json' -d "$(j name "なりすまし" owner_company_id "$(sql "select id from v2_companies where code='A99999'" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["id"])')")" | code)" "42501"
 ok "B社の検索結果にA社の求職者が出ない"              "$(curl -s -X POST "$BASE/rest/v1/rpc/v2_candidate_list" -H "apikey: $AK" -H "Authorization: Bearer $B" -H 'Content-Type: application/json' -d '{"p_q":"テスト花子"}' | len)" "0"
 
 RAUID=$(sql "select user_id from v2_members where role='ra' limit 1" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["user_id"])')

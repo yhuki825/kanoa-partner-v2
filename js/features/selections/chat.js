@@ -124,7 +124,7 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
     const rep = m.reply_to && byId[m.reply_to];
     return `
       <div class="msg-row ${side}" data-id="${esc(m.id)}">
-        ${m.mine ? '' : `<div class="msg-sender">${esc(m.sender_name)}</div>`}
+        ${!m.mine && m.sender_name ? `<div class="msg-sender">${esc(m.sender_name)}</div>` : ''}
         <div class="msg ${side} ${m.stamp ? 'is-stamp' : ''}">
           ${m.pinned ? `<span class="msg-pin" title="ピン留め">${icon('pin', 12)}</span>` : ''}
           ${rep ? `<div class="msg-reply">↩ ${esc((rep.deleted ? '削除されたメッセージ' : (rep.stamp || rep.body || '')).slice(0, 40))}</div>` : ''}
