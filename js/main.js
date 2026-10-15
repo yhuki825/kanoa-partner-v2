@@ -9,6 +9,11 @@ import { renderForcePasswordChange } from './features/auth/change-password.js';
 
 // 画面の登録（importするだけで router に載る）
 import { refreshNoticeBadge } from './features/home/home.js';
+import './features/candidates/list.js';
+import './features/candidates/edit.js';
+import './features/candidates/detail.js';
+import './features/jobs/jobs.js';
+import './features/jobs/detail.js';
 import './features/upcoming/upcoming.js';
 import './features/account/account.js';
 

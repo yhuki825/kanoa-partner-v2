@@ -16,3 +16,12 @@ export function fmtDateTime(iso) {
   return `${fmtDate(iso)} ${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`;
 }
 export function fmtYen(n) { return n == null ? '—' : `¥${Number(n).toLocaleString('ja-JP')}`; }
+export function ageOf(birth) {
+  if (!birth) return null;
+  const b = new Date(birth), n = new Date();
+  if (isNaN(b)) return null;
+  let a = n.getFullYear() - b.getFullYear();
+  if (n.getMonth() < b.getMonth() || (n.getMonth() === b.getMonth() && n.getDate() < b.getDate())) a--;
+  return a;
+}
+export function fmtMan(n) { return n == null || n === '' ? '—' : `${Number(n).toLocaleString('ja-JP')}万円`; }

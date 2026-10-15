@@ -6,10 +6,6 @@ import { esc } from '../../ui/format.js';
 
 const ra = () => S.role === 'ra';
 const PAGES = [
-  { path: 'candidates', icon: 'user', order: 10, title: '求職者', phase: 2,
-    what: () => ra() ? 'KANOAが持つ求職者と、届いた選考の求職者の一覧・検索・詳細' : '自社の求職者の一覧・検索・登録・詳細・書類' },
-  { path: 'jobs', icon: 'search', order: 20, title: () => (ra() ? '求人' : '求人検索'), phase: 2,
-    what: () => ra() ? '求人の登録・編集・公開、求人企業、KANOA→1次の紹介料' : '提示された求人の検索・詳細（別タブ）・紹介料・応募' },
   { path: 'selections', icon: 'flow', order: 30, title: '選考', phase: 3,
     what: () => '「自社で紹介した選考」「紹介された選考」、送客・見送り・受入、外部求人のURL登録、選考の進み具合' },
   { path: 'resources', icon: 'folder', order: 40, title: '各種資料', phase: 5,

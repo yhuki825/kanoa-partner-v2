@@ -59,7 +59,7 @@ export async function renderView() {
   const seq = ++renderSeq;
   document.getElementById('view-title').textContent = titleOf(def);
   document.getElementById('topbar-actions').innerHTML = '';
-  document.querySelectorAll('.nav-item[data-path]').forEach((b) => b.classList.toggle('active', b.dataset.path === path));
+  document.querySelectorAll('.nav-item[data-path]').forEach((b) => b.classList.toggle('active', b.dataset.path === (def.navParent || path)));
   // 画面を作り直す（前の画面のDOMは残さない）
   const old = document.getElementById('view');
   const el = old.cloneNode(false);
