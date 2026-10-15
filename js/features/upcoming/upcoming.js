@@ -6,8 +6,6 @@ import { esc } from '../../ui/format.js';
 
 const ra = () => S.role === 'ra';
 const PAGES = [
-  { path: 'selections', icon: 'flow', order: 30, title: '選考', phase: 3,
-    what: () => '「自社で紹介した選考」「紹介された選考」、送客・見送り・受入、外部求人のURL登録、選考の進み具合' },
   { path: 'resources', icon: 'folder', order: 40, title: '各種資料', phase: 5,
     what: () => ra() ? '資料の登録・並べ替え・公開' : '履歴書の雛形・記入見本などの閲覧とダウンロード' },
   { path: 'partners', icon: 'network', order: 50, title: 'パートナー管理', phase: 5, roles: ['ca'],

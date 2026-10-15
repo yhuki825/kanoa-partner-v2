@@ -155,3 +155,55 @@
   .share-row input[type="number"] { width: 100%; }
   .req-list { columns: 1; }
 }
+
+/* ---- 第3段階: 選考 ---- */
+.tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--c-border); margin: -4px 0 14px; flex-wrap: wrap; }
+.tab { display: inline-flex; align-items: center; gap: 6px; padding: 9px 14px; color: var(--c-text-sub); text-decoration: none; font-weight: 600; font-size: 13.5px; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.tab.active { color: var(--c-primary); border-bottom-color: var(--c-primary); }
+.tab-count { font-family: var(--font-mono); font-size: 12px; font-weight: 400; }
+.callout { background: var(--c-primary-soft); border: 1px solid #d6dafc; color: #2b2590; border-radius: 8px; padding: 10px 12px; font-size: 13px; margin-bottom: 12px; }
+.callout.warn { background: #fdf2e2; border-color: #f3d9ae; color: #7a4a06; }
+tr.is-waiting td { background: #fffaf0; }
+tr.is-waiting td:first-child { box-shadow: inset 3px 0 0 var(--c-warn); }
+.tag.st-wait { background: #fdf2e2; color: #b45309; font-weight: 700; }
+.tag.st-relay { background: #f4effe; color: #7c3aed; }
+.tag.st-active { background: var(--c-primary-soft); color: var(--c-primary); }
+.tag.st-done { background: #e8f6ee; color: #15803d; }
+.tag.st-closed { background: #f1f2f4; color: #6b7280; }
+.ms-chips { display: flex; flex-wrap: wrap; gap: 4px; list-style: none; }
+.ms-chips li { display: inline-flex; align-items: baseline; gap: 3px; font-size: 11.5px; padding: 2px 7px; border-radius: 10px; background: #f1f2f4; color: var(--c-text-sub); white-space: nowrap; }
+.ms-chips li small { font-family: var(--font-mono); font-size: 10.5px; }
+.ms-chips li.ms-passed { background: #e8f6ee; color: #15803d; }
+.ms-chips li.ms-failed { background: #fdeef1; color: #be123c; }
+.ms-mark { font-weight: 700; }
+.tag.ms-tag-passed { background: #e8f6ee; color: #15803d; }
+.tag.ms-tag-failed { background: #fdeef1; color: #be123c; }
+.sel-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
+.sel-main .card + .card { margin-top: 14px; }
+.sel-chat { position: sticky; top: calc(var(--topbar-h) + 14px); min-height: 60vh; }
+.sel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
+.sel-head h2 { margin: 0; }
+dd.url { word-break: break-all; }
+.ms-table input, .ms-table select { padding: 5px 8px; border: 1px solid var(--c-border); border-radius: 6px; background: var(--c-surface); }
+.timeline { list-style: none; border-left: 2px solid var(--c-border); padding-left: 14px; font-size: 13px; }
+.timeline li { margin-bottom: 10px; position: relative; }
+.timeline li::before { content: ''; position: absolute; left: -19px; top: 6px; width: 8px; height: 8px; border-radius: 50%; background: var(--c-primary); }
+.tl-note { margin-top: 3px; padding: 6px 10px; background: #fafafb; border: 1px solid var(--c-border); border-radius: 8px; }
+.pick-search { width: 100%; padding: 8px 12px; border: 1px solid var(--c-border); border-radius: 8px; margin-bottom: 8px; }
+.pick-list { max-height: 50vh; overflow-y: auto; display: flex; flex-direction: column; gap: 4px; }
+.pick-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--c-border); border-radius: 8px; background: var(--c-surface); text-align: left; }
+.pick-row:hover:not(:disabled) { border-color: var(--c-primary); }
+.pick-row:disabled { opacity: .55; cursor: not-allowed; }
+.pick-row[hidden] { display: none; }
+.pick-name { font-weight: 600; flex: 1; }
+.cand-apps { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+.cand-apps li { display: flex; flex-direction: column; gap: 4px; padding-bottom: 10px; border-bottom: 1px solid var(--c-border); }
+.cand-apps li:last-child { border-bottom: none; }
+.cand-apps a { display: flex; flex-direction: column; text-decoration: none; color: var(--c-text); }
+.today-item { display: flex; align-items: center; gap: 12px; padding: 10px 12px; border-radius: 8px; background: #fdf2e2; color: #7a4a06; text-decoration: none; font-weight: 600; }
+.today-num { font-family: var(--font-mono); font-size: 24px; font-weight: 700; color: var(--c-warn); }
+@media (max-width: 960px) {
+  .sel-layout { grid-template-columns: 1fr; }
+  .sel-chat { position: static; min-height: 0; }
+}
+.sel-table td:first-child { white-space: nowrap; }

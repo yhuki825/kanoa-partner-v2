@@ -58,6 +58,7 @@ export async function renderView() {
   if (!def || !allowed(def)) { navigate('home'); return; }
   const seq = ++renderSeq;
   document.getElementById('view-title').textContent = titleOf(def);
+  document.title = `${titleOf(def)}｜KANOA Partner Portal`;
   document.getElementById('topbar-actions').innerHTML = '';
   document.querySelectorAll('.nav-item[data-path]').forEach((b) => b.classList.toggle('active', b.dataset.path === (def.navParent || path)));
   // 画面を作り直す（前の画面のDOMは残さない）

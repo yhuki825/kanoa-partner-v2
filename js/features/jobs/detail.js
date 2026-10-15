@@ -4,9 +4,10 @@ import { register, setTopbarActions } from '../../router.js';
 import { sb } from '../../supabase.js';
 import { S } from '../../store.js';
 import { esc, fmtYen } from '../../ui/format.js';
-import { showError, toast, busy } from '../../ui/components.js';
+import { showError, toast, busy, openModal } from '../../ui/components.js';
 import { userError, updateRow } from '../../ui/db.js';
 import { fieldLabel } from '../../ui/candidate-fields.js';
+import { ageOf } from '../../ui/format.js';
 import { JOB_STATUS, openJobEditor } from './editor.js';
 
 async function frontOfferSection(job) {
@@ -52,6 +53,66 @@ async function frontOfferSection(job) {
   };
 }
 
+
+// 応募: 自社の求職者を選ぶ → 確認ポップアップ → 応募したら求人詳細に戻る
+// エントリー時必須項目は定義の見直し中のため、不足は表示するだけで止めない（設計書13）
+async function applyFlow(job) {
+  let cq = sb().from('v2_candidates').select('*').order('created_at', { ascending: false }).limit(200);
+  cq = S.role === 'ra' ? cq.is('owner_company_id', null) : cq.eq('owner_company_id', S.company.id);
+  const { data: cands, error } = await cq;
+  if (error) throw userError(error, '求職者を読み込めませんでした');
+  if (!cands.length) { showError(new Error('応募できる求職者がいません。先に「求職者」から登録してください。'), '応募'); return; }
+  const ids = cands.map((c) => c.id);
+  const [{ data: files }, { data: apps }] = await Promise.all([
+    sb().from('v2_candidate_files').select('candidate_id,kind').in('candidate_id', ids),
+    sb().from('v2_applications').select('candidate_id,stage').eq('job_id', job.id).in('candidate_id', ids),
+  ]);
+  const applied = new Set((apps || []).filter((x) => !['withdrawn', 'rejected'].includes(x.stage)).map((x) => x.candidate_id));
+  const missingOf = (c) => (job.entry_requirements || []).filter((k) =>
+    (k === 'resume' || k === 'cv') ? !(files || []).some((f) => f.candidate_id === c.id && f.kind === k)
+      : c[k] == null || c[k] === '').map(fieldLabel);
+
+  const m = openModal(`
+    <h3>応募する求職者を選ぶ</h3>
+    <p class="hint">${esc(job.client?.name || '')}「${esc(job.title)}」</p>
+    <input class="pick-search" placeholder="名前で絞り込み" aria-label="名前で絞り込み">
+    <div class="pick-list">${cands.map((c) => `
+      <button class="pick-row" data-id="${c.id}" ${applied.has(c.id) ? 'disabled' : ''}>
+        <span class="pick-name">${esc(c.name)}</span>
+        <span class="sub">${ageOf(c.birth_date) ?? '—'}歳・${esc(c.gender || '性別未登録')}</span>
+        ${applied.has(c.id) ? '<span class="tag">応募済み</span>' : ''}
+      </button>`).join('')}</div>
+    <div class="modal-actions"><button class="btn" data-act="cancel">キャンセル</button></div>`, { wide: true });
+  m.el.querySelector('[data-act="cancel"]').onclick = () => m.close();
+  m.el.querySelector('.pick-search').oninput = (e) => {
+    const v = e.target.value.trim();
+    m.el.querySelectorAll('.pick-row').forEach((b) => { b.hidden = v && !b.querySelector('.pick-name').textContent.includes(v); });
+  };
+  m.el.querySelectorAll('.pick-row').forEach((b) => {
+    b.onclick = () => {
+      const c = cands.find((x) => x.id === b.dataset.id);
+      const missing = missingOf(c);
+      const where = S.role === 'ra' ? 'そのまま選考を始めます。' : S.company.tier === 1 ? 'KANOAに届きます。' : 'まずアップライン企業の確認に回ります。';
+      m.close();
+      const cm = openModal(`
+        <h3>この内容で応募しますか？</h3>
+        <dl class="kv"><dt>求職者</dt><dd>${esc(c.name)}</dd><dt>求人</dt><dd>${esc(job.client?.name || '')}「${esc(job.title)}」</dd></dl>
+        ${missing.length ? `<p class="callout warn">エントリー時必須項目のうち、未入力の項目があります：${missing.map(esc).join('、')}</p>` : ''}
+        <p class="hint">応募すると${where}</p>
+        <div class="field"><label for="ap-note">申し送り（任意・アップラインに届きます）</label><textarea id="ap-note" rows="3"></textarea></div>
+        <div class="modal-actions"><button class="btn" data-act="cancel">キャンセル</button><button class="btn btn-primary" data-act="ok">応募する</button></div>`);
+      cm.el.querySelector('[data-act="cancel"]').onclick = () => cm.close();
+      const ok = cm.el.querySelector('[data-act="ok"]');
+      ok.onclick = () => busy(ok, async () => {
+        const { error: e2 } = await sb().rpc('v2_apply', { p_candidate: c.id, p_job: job.id, p_note: cm.el.querySelector('#ap-note').value.trim() || null });
+        if (e2) { showError(userError(e2, '応募できませんでした'), '応募'); return; }
+        cm.close();
+        toast(`${c.name}さんを応募しました。${where}`);
+      });
+    };
+  });
+}
+
 async function render(el, params) {
   const { data: job, error } = await sb().from('v2_jobs')
     .select('*, client:v2_clients(name, industry), v2_my_fee').eq('id', params.id).maybeSingle();
@@ -62,9 +123,10 @@ async function render(el, params) {
 
   const a = setTopbarActions(`
     ${S.role === 'ra' ? '<button class="btn" id="j-edit">編集</button>' : ''}
-    <button class="btn btn-primary" disabled title="第3段階で使えるようになります">応募する（準備中）</button>`);
+    ${job.status === 'open' ? '<button class="btn btn-primary" id="j-apply">応募する</button>' : `<button class="btn" disabled>${JOB_STATUS[job.status]}のため応募できません</button>`}`);
   const reload = () => render(el, params);
   a.querySelector('#j-edit')?.addEventListener('click', () => openJobEditor(job, reload).catch((e) => showError(e, '求人の編集')));
+  a.querySelector('#j-apply')?.addEventListener('click', () => applyFlow(job).catch((e) => showError(e, '応募')));
 
   const offer = S.role === 'ca' ? await frontOfferSection(job) : null;
   el.innerHTML = `

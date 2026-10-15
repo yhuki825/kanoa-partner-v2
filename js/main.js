@@ -14,6 +14,8 @@ import './features/candidates/edit.js';
 import './features/candidates/detail.js';
 import './features/jobs/jobs.js';
 import './features/jobs/detail.js';
+import { refreshWaitingBadge } from './features/selections/list.js';
+import './features/selections/detail.js';
 import './features/upcoming/upcoming.js';
 import './features/account/account.js';
 
@@ -25,6 +27,8 @@ function enter() {
   if (S.member?.must_change_pw) { renderForcePasswordChange(enter); return; }
   mountApp();
   refreshNoticeBadge();
+  refreshWaitingBadge();
+  document.addEventListener('v2:selection-changed', () => refreshWaitingBadge());
 }
 
 async function boot() {
