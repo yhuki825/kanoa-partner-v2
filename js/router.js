@@ -63,6 +63,7 @@ export async function renderView() {
   document.querySelectorAll('.nav-item[data-path]').forEach((b) => b.classList.toggle('active', b.dataset.path === (def.navParent || path)));
   // 画面を作り直す（前の画面のDOMは残さない）
   const old = document.getElementById('view');
+  try { old.__cleanup?.(); } catch {}
   const el = old.cloneNode(false);
   old.replaceWith(el);
   el.innerHTML = '<div class="empty">読み込み中…</div>';

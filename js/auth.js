@@ -10,7 +10,7 @@ export async function loadMe() {
   const uid = s?.session?.user?.id;
   if (!uid) return false;
   const { data: m, error } = await sb().from('v2_members')
-    .select('*, company:v2_companies(id, code, tier, name, status)')
+    .select('*, company:v2_companies!v2_members_company_id_fkey(id, code, tier, name, status)')
     .eq('user_id', uid).maybeSingle();
   if (error) throw error;
   if (!m || m.status !== 'active') return false;

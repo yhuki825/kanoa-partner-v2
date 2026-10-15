@@ -14,7 +14,7 @@ async function renderRA(el) {
   const a = setTopbarActions('<button class="btn btn-primary" id="j-new">求人を登録</button>');
   a.querySelector('#j-new').onclick = () => openJobEditor(null, () => render(el, {})).catch((e) => showError(e, '求人の登録'));
   const { data: jobs, error } = await sb().from('v2_jobs')
-    .select('id,title,status,location,employment,updated_at,client:v2_clients(name),v2_my_fee,shares:v2_job_shares(published)')
+    .select('id,title,status,location,employment,updated_at,client:v2_clients!v2_jobs_client_id_fkey(name),v2_my_fee,shares:v2_job_shares!v2_job_shares_job_id_fkey(published)')
     .order('updated_at', { ascending: false }).limit(200);
   if (error) throw userError(error, '求人を読み込めませんでした');
   el.innerHTML = `<section class="card">
@@ -40,7 +40,7 @@ async function renderRA(el) {
 
 async function renderCA(el, params) {
   const { data: jobs, error } = await sb().from('v2_jobs')
-    .select('id,title,description,location,employment,salary,status,client:v2_clients(name),v2_my_fee')
+    .select('id,title,description,location,employment,salary,status,client:v2_clients!v2_jobs_client_id_fkey(name),v2_my_fee')
     .eq('status', 'open').order('updated_at', { ascending: false }).limit(200);
   if (error) throw userError(error, '求人を読み込めませんでした');
   const q = (params.q || '').trim(), loc = params.loc || '', emp = params.emp || '';

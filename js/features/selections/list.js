@@ -11,10 +11,11 @@ const TABS = () => S.role === 'ra'
   ? [{ key: 'received', label: '紹介された選考' }, { key: 'mine', label: 'KANOAの求職者の選考' }]
   : [{ key: 'mine', label: '自社で紹介した選考' }, { key: 'received', label: '紹介された選考' }];
 
+// メニューのバッジ = 判断待ちの選考 + 未読の連絡がある選考（どちらも対応が必要なもの）
 export async function refreshWaitingBadge() {
-  const { data } = await sb().rpc('v2_waiting_count');
-  setBadge('selections', Number(data || 0));
-  return Number(data || 0);
+  const [{ data: w }, { data: u }] = await Promise.all([sb().rpc('v2_waiting_count'), sb().rpc('v2_chat_unread')]);
+  setBadge('selections', Number(w || 0) + (u || []).length);
+  return Number(w || 0);
 }
 
 async function render(el, params) {
@@ -23,12 +24,14 @@ async function render(el, params) {
   const tab = tabs.some((t) => t.key === params.tab) ? params.tab : (waiting ? 'received' : tabs[0].key);
   const q = params.q || '';
   const page = Math.max(0, Number(params.p || 0));
-  const [{ data, error }, ...counts] = await Promise.all([
+  const [{ data, error }, { data: unread }, ...counts] = await Promise.all([
     sb().rpc('v2_selection_list', { p_tab: tab, p_q: q, p_limit: PAGE, p_offset: page * PAGE }),
+    sb().rpc('v2_chat_unread'),
     ...tabs.map((t) => sb().rpc('v2_selection_list', { p_tab: t.key, p_q: '', p_limit: 1, p_offset: 0 })),
   ]);
   if (error) throw userError(error, '選考を読み込めませんでした');
   const total = data[0]?.total || 0;
+  const unreadOf = Object.fromEntries((unread || []).map((u) => [u.application_id, Number(u.unread)]));
   const link = (t, extra = '') => `#/selections?tab=${t}${extra}`;
 
   el.innerHTML = `
@@ -48,7 +51,7 @@ async function render(el, params) {
         <thead><tr><th>求職者</th><th>求人企業・求人</th><th>選考の進み具合</th>${tab === 'received' ? '<th>紹介元</th>' : ''}<th>状態</th><th>更新</th></tr></thead>
         <tbody>${data.map((a) => `
           <tr class="row-link ${a.waiting_me ? 'is-waiting' : ''}" data-id="${a.id}" tabindex="0">
-            <td><a href="#/selection?id=${a.id}"><b>${esc(a.candidate_name)}</b></a></td>
+            <td><a href="#/selection?id=${a.id}"><b>${esc(a.candidate_name)}</b></a>${unreadOf[a.id] ? ` <span class="badge" title="未読の連絡">${unreadOf[a.id]}</span>` : ''}</td>
             <td>${esc(a.client_name || '—')}<br><small class="sub">${esc(a.job_title)}${a.kind === 'external' ? '（外部求人）' : ''}</small></td>
             <td>${a.stage === 'relay' ? '<span class="sub">選考開始前</span>' : milestoneChips(a.milestones)}</td>
             ${tab === 'received' ? `<td>${esc(a.source_label || '—')}</td>` : ''}

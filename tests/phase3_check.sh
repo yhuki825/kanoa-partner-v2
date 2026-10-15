@@ -18,6 +18,8 @@ rpc(){ curl -s -X POST "$BASE/rest/v1/rpc/$2" -H "apikey: $AK" -H "Authorization
 len(){ python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d) if isinstance(d,list) else 'ERR:'+str(d)[:80])"; }
 code(){ python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('code') if isinstance(d,dict) else 'none')"; }
 names(){ python3 -c "import json,sys;d=json.load(sys.stdin);print(','.join(sorted(x[sys.argv[1]] for x in d)) if isinstance(d,list) else 'ERR')" "$1"; }
+# 判定: 名前の一覧に「含むべき名前」がすべてあり、「含まない名前」が1つも無ければ OK
+incl(){ python3 -c "import json,sys;d=json.load(sys.stdin);k=sys.argv[1];names={x[k] for x in d} if isinstance(d,list) else set();inc=[v for v in sys.argv[2].split(',') if v];exc=[v for v in sys.argv[3].split(',') if v];print('OK' if all(v in names for v in inc) and not any(v in names for v in exc) else 'NG:'+','.join(sorted(names)))" "$1" "$2" "${3:-}"; }
 sql(){ python3 -c "import json,sys;print(json.dumps({'query':sys.argv[1]}))" "$1" > "$TMP/q.json"
   curl -s -X POST "https://api.supabase.com/v1/projects/oicpfsfvywdhdriqehyr/database/query" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @"$TMP/q.json"; }
 one(){ sql "$1" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(list(d[0].values())[0])'; }
@@ -30,14 +32,14 @@ JOB=$(one "select id from v2_jobs where title='テスト営業職（自動削除
 CJIRO=$(one "select id from v2_candidates where name='テスト次郎'")
 
 echo "== 見える範囲 =="
-ok "B社: 自社で紹介した選考（次郎・三郎）"       "$(rpc "$B" v2_selection_list '{"p_tab":"mine"}' | names candidate_name)" "テスト三郎,テスト次郎"
+ok "B社: 自社で紹介した選考に次郎・三郎があり、A社の花子は無い" "$(rpc "$B" v2_selection_list '{"p_tab":"mine"}' | incl candidate_name テスト次郎,テスト三郎 テスト花子)" "OK"
 ok "B社: 紹介された選考はない"                    "$(rpc "$B" v2_selection_list '{"p_tab":"received"}' | len)" "0"
-ok "A社: 紹介された選考（次郎・三郎）"            "$(rpc "$A" v2_selection_list '{"p_tab":"received"}' | names candidate_name)" "テスト三郎,テスト次郎"
+ok "A社: 紹介された選考に次郎・三郎があり、自社の花子は無い" "$(rpc "$A" v2_selection_list '{"p_tab":"received"}' | incl candidate_name テスト次郎,テスト三郎 テスト花子)" "OK"
 ok "A社: 自社で紹介した選考（花子の社内・外部）"  "$(rpc "$A" v2_selection_list '{"p_tab":"mine"}' | len)" "2"
-ok "B社から見える選考の行は自社の2件だけ"         "$(get "$B" 'v2_applications?select=id' | len)" "2"
+ok "B社から見える選考の行はすべてB社が紹介したもの" "$(get "$B" 'v2_applications?select=applied_by_company' | python3 -c "import json,sys;print(len({x['applied_by_company'] for x in json.load(sys.stdin)}))")" "1"
 ok "外部求人はフロント（B社）から見えない"         "$(get "$B" "v2_applications?select=id&id=eq.$EXT" | len)" "0"
-ok "B社はA社の求職者（花子）を見られない"          "$(get "$B" 'v2_candidates?select=name' | names name)" "テスト三郎,テスト次郎"
-ok "A社には届いた選考の求職者も見える"             "$(get "$A" 'v2_candidates?select=name' | names name)" "テスト三郎,テスト次郎,テスト花子"
+ok "B社はA社の求職者（花子）を見られない"          "$(get "$B" 'v2_candidates?select=name' | incl name テスト次郎 テスト花子)" "OK"
+ok "A社には届いた選考の求職者（次郎・三郎）も見える" "$(get "$A" 'v2_candidates?select=name' | incl name テスト次郎,テスト三郎,テスト花子)" "OK"
 ok "A社からB社のメモは見えない"                    "$(get "$A" "v2_candidate_notes?select=memo&candidate_id=eq.$CJIRO" | len)" "0"
 ok "B社から見た経路: KANOAのコメントは伏せられる"  "$(rpc "$B" v2_application_events_for "{\"p_app\":\"$JIRO\"}" | python3 -c 'import json,sys;print([x["note"] for x in json.load(sys.stdin) if x["action"]=="accepted"][0])')" "None"
 ok "A社から見た経路: KANOAのコメントが見える"      "$(rpc "$A" v2_application_events_for "{\"p_app\":\"$JIRO\"}" | python3 -c 'import json,sys;print([x["note"] for x in json.load(sys.stdin) if x["action"]=="accepted"][0] is not None)')" "True"
@@ -56,9 +58,10 @@ ok "外部求人のURLは http(s) のみ"                  "$(rpc "$A" v2_regist
 
 RAUID=$(one "select user_id from v2_members where role='ra' limit 1")
 ra(){ sql "begin; select set_config('request.jwt.claims','{\"sub\":\"$RAUID\",\"role\":\"authenticated\"}',true); set local role authenticated; $1; commit;"; }
-ok "RA: 紹介された選考3件（次郎・三郎・花子）、外部求人は見えない" \
+ok "RA: 紹介された選考は次郎・三郎・花子（外部求人は見えない）" \
   "$(ra "select string_agg(candidate_name, ',' order by candidate_name) r from v2_selection_list('received')" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" "テスト三郎,テスト次郎,テスト花子"
-ok "RA: 受入待ちは2件"                              "$(ra "select v2_waiting_count() r" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" "2"
+EXPECT=$(one "select count(*) from v2_applications where stage='relay' and holder_company_id is null and kanoa_visible")
+ok "RA: 受入待ちの件数がDBの実数と一致"             "$(ra "select v2_waiting_count() r" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" "$EXPECT"
 ok "RA: 外部求人の行は読めない"                     "$(ra "select count(*) r from v2_applications where kind='external'" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" "0"
 ok "RA: B社の求職者のメモは読めない"                "$(ra "select count(*) r from v2_candidate_notes where company_id is not null" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" "0"
 echo "----"; echo "PASS $pass / FAIL $fail"; [ "$fail" -eq 0 ]

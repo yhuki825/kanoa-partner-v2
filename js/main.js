@@ -29,6 +29,8 @@ function enter() {
   refreshNoticeBadge();
   refreshWaitingBadge();
   document.addEventListener('v2:selection-changed', () => refreshWaitingBadge());
+  // 別の画面にいても新しい連絡・判断待ちに気づけるよう、1分ごとにバッジを更新
+  setInterval(() => { if (document.visibilityState === 'visible') refreshWaitingBadge(); }, 60000);
 }
 
 async function boot() {

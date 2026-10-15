@@ -207,3 +207,20 @@ dd.url { word-break: break-all; }
   .sel-chat { position: static; min-height: 0; }
 }
 .sel-table td:first-child { white-space: nowrap; }
+
+/* ---- 第4段階: 選考チャット ---- */
+.sel-chat { display: flex; flex-direction: column; padding: 0; overflow: hidden; height: calc(100dvh - var(--topbar-h) - 40px); }
+.sel-chat > h2, .sel-chat > .hint, .sel-chat > .empty { padding: 0 16px; }
+.sel-chat > h2 { padding-top: 16px; }
+.chat-tabs { margin: 0; padding: 0 8px; }
+.chat-tabs .tab { background: none; border-left: none; border-right: none; border-top: none; font-size: 12.5px; padding: 10px 10px; }
+.chat-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--c-border); }
+.chat-head small { display: block; }
+.sel-chat .conv-body { flex: 1; overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.sel-chat .msg-row { max-width: 88%; }
+.msg-sender { font-size: 11px; color: var(--c-text-sub); margin-bottom: 2px; }
+.msg.is-deleted { opacity: .55; font-style: italic; }
+.sel-chat .composer textarea { min-height: 44px; max-height: 160px; resize: vertical; }
+.sel-chat .composer .btn:first-child { padding: 6px 8px; font-size: 16px; }
+.older { align-self: center; }
+@media (max-width: 960px) { .sel-chat { height: 70dvh; } }

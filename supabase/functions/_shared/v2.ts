@@ -40,7 +40,7 @@ export async function caller(req: Request): Promise<Caller | null> {
   const { data: u, error } = await sb.auth.getUser(token);
   if (error || !u?.user) return null;
   const { data: m } = await sb.from("v2_members")
-    .select("id, role, company_id, is_owner, status, v2_companies(tier, status)")
+    .select("id, role, company_id, is_owner, status, v2_companies!v2_members_company_id_fkey(tier, status)")
     .eq("user_id", u.user.id).maybeSingle();
   if (!m || m.status !== "active") return null;
   // deno-lint-ignore no-explicit-any

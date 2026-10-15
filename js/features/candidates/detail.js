@@ -58,7 +58,7 @@ async function render(el, params) {
     sb().from('v2_candidate_notes').select('memo').eq('candidate_id', c.id).maybeSingle(),
     sb().from('v2_candidate_files').select('*').eq('candidate_id', c.id).order('created_at'),
     sb().rpc('v2_can_edit_candidate', { p_cand: c.id }),
-    sb().from('v2_applications').select('id,kind,stage,result,external_url,external_company,external_title,updated_at,holder_company_id,kanoa_visible,job:v2_jobs(title,client:v2_clients(name)),milestones:v2_milestones(name,result,scheduled_on,done_on,seq)')
+    sb().from('v2_applications').select('id,kind,stage,result,external_url,external_company,external_title,updated_at,holder_company_id,kanoa_visible,job:v2_jobs!v2_applications_job_id_fkey(title,client:v2_clients!v2_jobs_client_id_fkey(name)),milestones:v2_milestones!v2_milestones_application_id_fkey(name,result,scheduled_on,done_on,seq)')
       .eq('candidate_id', c.id).order('updated_at', { ascending: false }),
   ]);
   if (ae) throw userError(ae, '選考を読み込めませんでした');

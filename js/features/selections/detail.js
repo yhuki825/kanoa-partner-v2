@@ -8,6 +8,7 @@ import { esc, fmtDateTime, fmtYen } from '../../ui/format.js';
 import { openModal, showError, toast, busy, confirmDialog } from '../../ui/components.js';
 import { userError } from '../../ui/db.js';
 import { stageTag, RESULT_LABEL, EVENT_LABEL } from '../../ui/selection.js';
+import { mountChat } from './chat.js';
 
 const owns = (companyId) => (companyId ? companyId === S.company?.id : S.role === 'ra');
 
@@ -32,7 +33,7 @@ function noteModal({ title, okLabel, danger = false, placeholder = '' }) {
 
 async function render(el, params) {
   const { data: a, error } = await sb().from('v2_applications')
-    .select('*, candidate:v2_candidates(id, name, kana), job:v2_jobs(id, title, client:v2_clients(name), v2_my_fee), parties:v2_application_parties(company:v2_companies(id, code, name, parent_id, tier))')
+    .select('*, candidate:v2_candidates!v2_applications_candidate_id_fkey(id, name, kana), job:v2_jobs!v2_applications_job_id_fkey(id, title, client:v2_clients!v2_jobs_client_id_fkey(name), v2_my_fee), parties:v2_application_parties!v2_application_parties_application_id_fkey(company:v2_companies!v2_application_parties_company_id_fkey(id, code, name, parent_id, tier))')
     .eq('id', params.id).maybeSingle();
   if (error) throw userError(error, '選考を読み込めませんでした');
   if (!a) { el.innerHTML = '<div class="empty">この選考は見つからないか、見る権限がありません。</div>'; return; }
@@ -110,13 +111,12 @@ async function render(el, params) {
               ${e.note ? `<div class="pre tl-note">${esc(e.note)}</div>` : ''}</li>`).join('')}</ol>
         </section>
       </div>
-      <aside class="card sel-chat">
-        <h2>連絡</h2>
-        <p class="hint">この選考についての連絡は、第4段階でここに付きます。相手は直上と直下の会社だけです${!isRA && S.company?.tier > 0 ? '（アップラインとの連絡／紹介元との連絡を切り替えて使います）' : ''}。</p>
-      </aside>
+      <aside class="card sel-chat" id="sel-chat"><div class="empty">連絡を読み込み中…</div></aside>
     </div>`;
 
-  const reload = () => render(el, params);
+  const reload = () => { el.__cleanup?.(); render(el, params); };
+  el.__cleanup = mountChat(el.querySelector('#sel-chat'), a,
+    { onUnreadChange: () => document.dispatchEvent(new CustomEvent('v2:selection-changed')) });
   el.querySelector('#open-job')?.addEventListener('click', (e) => { e.preventDefault(); window.open(`${location.pathname}#/job?id=${a.job_id}`, '_blank'); });
 
   const call = async (fn, args, msg) => {

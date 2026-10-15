@@ -126,15 +126,19 @@ async function render(el) {
     a.querySelector('#nt-new').onclick = () => editor(null, () => render(el)).catch((e) => showError(e, 'お知らせの作成'));
   }
 
-  const { data: waiting } = await sb().rpc('v2_waiting_count');
-  setBadge('selections', Number(waiting || 0));
+  const [{ data: waiting }, { data: unread }] = await Promise.all([sb().rpc('v2_waiting_count'), sb().rpc('v2_chat_unread')]);
+  const unreadApps = (unread || []).length;
+  setBadge('selections', Number(waiting || 0) + unreadApps);
   el.innerHTML = `
     <section class="card today">
       <h2>今日やること</h2>
       ${Number(waiting) ? `<a class="today-item" href="#/selections?tab=received">
           <span class="today-num">${Number(waiting)}</span>
           <span>${isRA() ? '受入待ちの選考があります' : '判断待ち（送客・見送り）の選考があります'}</span></a>`
-        : '<p class="sub">いま急いで対応が必要なものはありません。</p>'}
+        : ''}
+      ${unreadApps ? `<a class="today-item" href="#/selections">
+          <span class="today-num">${unreadApps}</span><span>未読の連絡がある選考があります</span></a>` : ''}
+      ${!Number(waiting) && !unreadApps ? '<p class="sub">いま急いで対応が必要なものはありません。</p>' : ''}
     </section>
     <section class="card">
       <h2>お知らせ</h2>

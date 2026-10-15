@@ -115,7 +115,7 @@ async function applyFlow(job) {
 
 async function render(el, params) {
   const { data: job, error } = await sb().from('v2_jobs')
-    .select('*, client:v2_clients(name, industry), v2_my_fee').eq('id', params.id).maybeSingle();
+    .select('*, client:v2_clients!v2_jobs_client_id_fkey(name, industry), v2_my_fee').eq('id', params.id).maybeSingle();
   if (error) throw userError(error, '求人を読み込めませんでした');
   if (!job) { el.innerHTML = '<div class="empty">この求人は見つからないか、あなたの会社には提示されていません。</div>'; return; }
   document.title = `${job.title}｜KANOA Partner Portal`;
