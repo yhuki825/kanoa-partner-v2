@@ -73,3 +73,30 @@
 
 /* 空状態 */
 .empty { text-align: center; color: var(--c-text-sub); padding: 40px 10px; }
+
+/* ---- 2026-10 再設計: 共通部品の追加 ---- */
+.btn-sm { padding: 5px 10px; font-size: 12.5px; }
+.btn:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, .notice-head:focus-visible {
+  outline: 2px solid var(--c-primary); outline-offset: 2px;
+}
+
+/* 失敗・お知らせの帯（閉じるまで残る） */
+#alert-root { position: sticky; top: 0; z-index: 60; display: flex; flex-direction: column; }
+.alert-bar { display: flex; align-items: center; gap: 10px; padding: 10px 16px; border-bottom: 1px solid; font-size: 13px; }
+.alert-bar.err { background: #fdeef1; border-color: #f4c5cf; color: #7a0e27; }
+.alert-bar.info { background: var(--c-primary-soft); border-color: #d6dafc; color: #2b2590; }
+.alert-msg { flex: 1; display: flex; flex-wrap: wrap; gap: 4px 10px; }
+.alert-msg span { color: inherit; opacity: .9; }
+
+.modal-wide { max-width: 640px; }
+.modal-actions { align-items: center; }
+.hint { font-size: 12.5px; color: var(--c-text-sub); margin-bottom: 12px; }
+.pre { white-space: pre-wrap; word-break: break-word; }
+.tag { display: inline-block; font-size: 11px; padding: 1px 7px; border-radius: 6px; background: #f1f2f4; color: var(--c-text-sub); }
+.dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--c-danger); flex-shrink: 0; }
+label.check { display: flex; align-items: center; gap: 8px; font-size: 13.5px; padding: 4px 0; color: var(--c-text); font-weight: 400; }
+label.check small { color: var(--c-text-sub); }
+fieldset.field { border: none; }
+fieldset.field legend { font-size: 12.5px; color: var(--c-text-sub); font-weight: 600; margin-bottom: 4px; }
+dl.kv { display: grid; grid-template-columns: 110px 1fr; gap: 6px 12px; margin-bottom: 16px; font-size: 13.5px; }
+dl.kv dt { color: var(--c-text-sub); }

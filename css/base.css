@@ -76,3 +76,18 @@ input, select, textarea { font: inherit; color: inherit; }
   .nav-item { flex-direction: column; gap: 2px; font-size: 10px; padding: 6px 10px; white-space: nowrap; }
   .content { padding: 14px 14px 90px; }
 }
+
+/* ---- 2026-10 再設計: サイドバー（リンク化・アイコン・本人表示） ---- */
+.sidebar nav { display: flex; flex-direction: column; gap: 2px; }
+a.nav-item { color: var(--c-text); text-decoration: none; }
+a.nav-item.active { color: var(--c-primary-ink); }
+.nav-item .ic { flex-shrink: 0; }
+.sidebar .who { font-size: 13px; font-weight: 600; padding: 0 10px 14px; border-bottom: 1px solid var(--c-border); margin-bottom: 8px; }
+.sidebar .who span { display: block; font-weight: 400; font-size: 11px; color: var(--c-text-sub); margin-top: 2px; }
+.topbar #topbar-actions { display: flex; gap: 8px; }
+.mono { font-family: var(--font-mono); }
+.grow { flex: 1; }
+@media (max-width: 760px) {
+  .sidebar .who { display: none; }
+  .sidebar nav { flex-direction: row; }
+}

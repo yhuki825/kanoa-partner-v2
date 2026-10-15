@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# 第1段階（土台）の権限テスト。何度流してもよい（読み取り＋拒否の確認だけ。最後の更新1件は元に戻す）
+# 使い方: bash tests/phase1_check.sh
+# 前提: tests/.test-accounts.env（テスト用アカウント）、Supabase CLI にログイン済み（キーチェーン）
+set -u
+cd "$(dirname "$0")/.."
+source tests/.test-accounts.env
+BASE=https://oicpfsfvywdhdriqehyr.supabase.co
+AK=sb_publishable_fBK1T1Xhx1Luj-OjbzFvaQ_4pUgNOms
+TOKEN=$(security find-generic-password -s "Supabase CLI" -w)
+TMP=$(mktemp -d); trap 'rm -rf "$TMP"' EXIT
+pass=0; fail=0
+ok(){ if [ "$2" = "$3" ]; then echo "PASS  $1"; pass=$((pass+1)); else echo "FAIL  $1  期待=[$3] 実際=[$2]"; fail=$((fail+1)); fi; }
+email(){ echo "$(echo "$1" | tr 'A-Z' 'a-z')@id.kanoa-portal.invalid"; }
+login(){ curl -s -X POST "$BASE/auth/v1/token?grant_type=password" -H "apikey: $AK" -H "Content-Type: application/json" \
+  -d "{\"email\":\"$(email "$1")\",\"password\":\"$2\"}" | python3 -c "import json,sys;print(json.load(sys.stdin).get('access_token',''))"; }
+get(){ curl -s "$BASE/rest/v1/$2" -H "apikey: $AK" -H "Authorization: Bearer $1"; }
+codes(){ python3 -c "import json,sys;d=json.load(sys.stdin);print(','.join(sorted(str(x[sys.argv[1]]) for x in d)) if isinstance(d,list) else 'ERR')" "$1"; }
+sql(){ python3 -c "import json,sys;print(json.dumps({'query':sys.argv[1]}))" "$1" > "$TMP/q.json"
+  curl -s -X POST "https://api.supabase.com/v1/projects/oicpfsfvywdhdriqehyr/database/query" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @"$TMP/q.json"; }
+
+A=$(login "$A_OWNER_ID" "$A_OWNER_PW"); C=$(login "$A_CA_ID" "$A_CA_PW"); B=$(login "$B_OWNER_ID" "$B_OWNER_PW")
+ok "3アカウントでログインできる" "$([ -n "$A" ] && [ -n "$C" ] && [ -n "$B" ] && echo y)" "y"
+
+ok "A社: 自社と自分のフロントだけ見える"   "$(get "$A" 'v2_companies?select=code' | codes code)" "A99999,B00001"
+ok "B社: 自社だけ見える（アップは見えない）" "$(get "$B" 'v2_companies?select=code' | codes code)" "B00001"
+ok "A社: 自社メンバー＋フロントの代表者"   "$(get "$A" 'v2_members?select=login_id' | codes login_id)" "A99999-01,A99999-02,B00001-01"
+ok "B社: 自社メンバーだけ"                 "$(get "$B" 'v2_members?select=login_id' | codes login_id)" "B00001-01"
+ok "未ログイン: 会社は何も見えない"         "$(curl -s "$BASE/rest/v1/v2_companies?select=code" -H "apikey: $AK")" "[]"
+
+ok "お知らせ: A社は全社向けだけ（下書き・B社向けは見えない）" "$(get "$A" 'v2_notices?select=title' | codes title)" "全社向け（テスト）"
+ok "お知らせ: B社は全社向け＋B社向け"                         "$(get "$B" 'v2_notices?select=title' | codes title)" "B社向け（テスト）,全社向け（テスト）"
+ok "CAはお知らせを作れない" "$(curl -s -X POST "$BASE/rest/v1/v2_notices" -H "apikey: $AK" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"title":"x"}' | python3 -c 'import json,sys;print(json.load(sys.stdin).get("code"))')" "42501"
+
+ok "代表でないCAはCAを追加できない" "$(curl -s -X POST "$BASE/functions/v1/v2-member-create" -H "apikey: $AK" -H "Authorization: Bearer $C" -H 'Content-Type: application/json' -d '{"name":"x"}' | python3 -c 'import json,sys;print(json.load(sys.stdin).get("error"))')" "owner_only"
+ok "代表でないCAは招待できない"     "$(curl -s -X POST "$BASE/functions/v1/v2-invite-issue" -H "apikey: $AK" -H "Authorization: Bearer $C" -H 'Content-Type: application/json' -d '{"company_name":"x"}' | python3 -c 'import json,sys;print(json.load(sys.stdin).get("error"))')" "owner_only"
+ok "CAは自分を代表者にできない（エラーで止まる）" "$(curl -s -X PATCH "$BASE/rest/v1/v2_members?login_id=eq.$A_CA_ID" -H "apikey: $AK" -H "Authorization: Bearer $C" -H 'Content-Type: application/json' -d '{"is_owner":true}' | python3 -c 'import json,sys;print(json.load(sys.stdin).get("code"))')" "P0403"
+
+V=$(get "$C" "v2_members?select=version&login_id=eq.$A_CA_ID" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["version"])')
+ok "古いversionでの更新は衝突で止まる" "$(curl -s -X PATCH "$BASE/rest/v1/v2_members?login_id=eq.$A_CA_ID" -H "apikey: $AK" -H "Authorization: Bearer $C" -H 'Content-Type: application/json' -d "{\"name\":\"古い画面\",\"version\":$((V-1))}" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("code"))')" "P0409"
+
+RAUID=$(sql "select user_id from v2_members where role='ra' limit 1" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["user_id"])')
+ok "RA: 全社・全お知らせ（下書き含む）が見える" "$(sql "begin; select set_config('request.jwt.claims','{\"sub\":\"$RAUID\",\"role\":\"authenticated\"}',true); set local role authenticated; select (select count(*) from v2_companies)||'/'||(select count(*) from v2_notices where title like '%（テスト）') r; commit;" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" "2/3"
+
+ok "V1が無傷（V1のログイン用アカウント26件）" "$(sql "select count(*) c from auth.users where email like '%@partner.kanoa.local'" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["c"])')" "26"
+
+echo "----"; echo "PASS $pass / FAIL $fail"; [ "$fail" -eq 0 ]

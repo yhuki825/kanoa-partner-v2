@@ -1,79 +1,88 @@
-// ハッシュルーティング＋画面シェル描画
-// 各featureは register() でルートを登録する。feature同士の直接importは禁止
+// ハッシュルーティング＋画面の骨格
+// 各画面(feature)は register() で自分を登録する。画面同士は直接importしない
 import { S } from './store.js';
 import { esc } from './ui/format.js';
+import { icon } from './ui/icons.js';
+import { showError } from './ui/components.js';
 import { logout } from './auth.js';
 import { tierLabel } from './config.js';
 
-const routes = new Map();   // path -> { title, nav, roles, render(el), icon }
+const routes = new Map();   // path -> { title, icon, roles, nav, order, render(el, params) }
+export function register(path, def) { routes.set(path, { order: 99, nav: true, ...def }); }
 
-export function register(path, def) { routes.set(path, def); }
+export function navigate(path) { location.hash = '#/' + String(path).replace(/^#?\/?/, ''); }
 
-export function navigate(path) { location.hash = '#/' + path.replace(/^#?\/?/, ''); }
-
-function currentPath() {
-  const h = location.hash.replace(/^#\/?/, '');
-  return h || 'home';
+function parseHash() {
+  const [path, query] = location.hash.replace(/^#\/?/, '').split('?');
+  return { path: path || 'home', params: Object.fromEntries(new URLSearchParams(query || '')) };
 }
 
-// ログイン後のアプリ骨格を描画
+function allowed(def) { return !def.roles || def.roles.includes(S.role); }
+function titleOf(def) { return typeof def.title === 'function' ? def.title() : def.title; }
+
 export function mountApp() {
   const app = document.getElementById('app');
-  const navItems = [...routes.entries()]
-    .filter(([, d]) => d.nav && (!d.roles || d.roles.includes(S.role)) && (!d.when || d.when()));
-
-  const who = S.role === 'kanoa'
-    ? 'KANOA 管理'
-    : `${esc(S.company?.name || '')}（${esc(S.company?.code || '')}・${tierLabel(S.company?.tier || 1)}）`;
+  const nav = [...routes.entries()].filter(([, d]) => d.nav && allowed(d))
+    .sort((a, b) => a[1].order - b[1].order);
+  const who = S.role === 'ra'
+    ? `${esc(S.member.name)}<span>KANOA（RA）</span>`
+    : `${esc(S.member.name)}<span>${esc(S.company.name)}・${esc(S.member.login_id)}・${esc(tierLabel(S.company.tier))}</span>`;
 
   app.innerHTML = `
     <div class="layout">
       <aside class="sidebar">
-        <div class="brand">KANOA Partner Portal<small>${who}</small></div>
-        ${navItems.map(([p, d]) => `
-          <button class="nav-item" data-path="${p}">
-            <span>${d.icon || '・'}</span><span class="nav-label">${esc(d.title)}</span>
+        <div class="brand">KANOA Partner Portal</div>
+        <div class="who">${who}</div>
+        <nav>${nav.map(([p, d]) => `
+          <a class="nav-item" href="#/${p}" data-path="${p}">
+            ${icon(d.icon)}<span class="nav-label">${esc(titleOf(d))}</span>
             <span class="badge" data-badge="${p}" hidden></span>
-          </button>`).join('')}
+          </a>`).join('')}</nav>
         <div class="spacer"></div>
-        <button class="nav-item" data-act="logout"><span>⏻</span><span class="nav-label">ログアウト</span></button>
+        <button class="nav-item" data-act="logout">${icon('logout')}<span class="nav-label">ログアウト</span></button>
       </aside>
       <div class="main">
-        <header class="topbar"><h1 id="view-title"></h1><div class="grow"></div></header>
+        <header class="topbar"><h1 id="view-title"></h1><div class="grow"></div><div id="topbar-actions"></div></header>
         <main class="content" id="view"></main>
       </div>
     </div>`;
-
-  app.querySelectorAll('.nav-item[data-path]').forEach((b) => {
-    b.onclick = () => navigate(b.dataset.path);
-  });
   app.querySelector('[data-act="logout"]').onclick = () => logout();
-
   window.addEventListener('hashchange', renderView);
   renderView();
 }
 
-export function renderView() {
-  const path = currentPath();
-  const def = routes.get(path) || routes.get('home');
-  if (!def) return;
-  if (def.roles && !def.roles.includes(S.role)) { navigate('home'); return; }
-
-  document.getElementById('view-title').textContent = def.title;
-  document.querySelectorAll('.nav-item[data-path]').forEach((b) => {
-    b.classList.toggle('active', b.dataset.path === path);
-  });
-  const el = document.getElementById('view');
+let renderSeq = 0;
+export async function renderView() {
+  const { path, params } = parseHash();
+  const def = routes.get(path);
+  if (!def || !allowed(def)) { navigate('home'); return; }
+  const seq = ++renderSeq;
+  document.getElementById('view-title').textContent = titleOf(def);
+  document.getElementById('topbar-actions').innerHTML = '';
+  document.querySelectorAll('.nav-item[data-path]').forEach((b) => b.classList.toggle('active', b.dataset.path === path));
+  // 画面を作り直す（前の画面のDOMは残さない）
+  const old = document.getElementById('view');
+  const el = old.cloneNode(false);
+  old.replaceWith(el);
   el.innerHTML = '<div class="empty">読み込み中…</div>';
-  Promise.resolve(def.render(el)).catch((e) => {
-    el.innerHTML = `<div class="empty">読み込みに失敗しました<br><small>${esc(e?.message || '')}</small></div>`;
-  });
+  try {
+    await def.render(el, params);
+  } catch (e) {
+    if (seq !== renderSeq) return;
+    el.innerHTML = '<div class="empty">この画面を表示できませんでした。上の帯の内容を確認してください。</div>';
+    showError(e, `画面の表示: ${path}`);
+  }
 }
 
-// ナビのバッジ（未読数など）を更新
 export function setBadge(path, count) {
   document.querySelectorAll(`[data-badge="${path}"]`).forEach((b) => {
     b.hidden = !count;
     b.textContent = count > 99 ? '99+' : String(count || '');
   });
+}
+
+export function setTopbarActions(html) {
+  const a = document.getElementById('topbar-actions');
+  a.innerHTML = html;
+  return a;
 }

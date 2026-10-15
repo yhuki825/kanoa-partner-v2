@@ -1,24 +1,35 @@
-// エントリポイント: 認証復元 → ログイン画面 or アプリ本体
-import { restoreAuth } from './auth.js';
+// 入口: 認証の復元 → ログイン画面 / 初回パスワード変更 / アプリ本体
+import { loadMe } from './auth.js';
+import { S } from './store.js';
 import { mountApp } from './router.js';
+import { showError } from './ui/components.js';
+import { startVersionCheck } from './version-check.js';
 import { renderLogin } from './features/auth/login.js';
+import { renderForcePasswordChange } from './features/auth/change-password.js';
 
-// featureの登録（import するだけでルートが router に登録される）
-import './features/dashboard/dashboard.js';
-import './features/relay/relay.js';
-import './features/screening/screening.js';
-import './features/candidates/candidates.js';
-import './features/projects/projects.js';
-import './features/companies/companies.js';
-import './features/chat/chat.js';
-import './features/invoices/invoices.js';
-import './features/tasks/tasks.js';
-import './features/settings/settings.js';
+// 画面の登録（importするだけで router に載る）
+import { refreshNoticeBadge } from './features/home/home.js';
+import './features/upcoming/upcoming.js';
+import './features/account/account.js';
 
-async function boot() {
-  const authed = await restoreAuth();
-  if (authed) mountApp();
-  else renderLogin(() => mountApp());
+// 握り潰さない: 想定外のエラーはすべて帯に出す（申し送りA-4/D-1）
+window.addEventListener('error', (e) => showError(e.error || new Error(e.message), '想定外のエラー'));
+window.addEventListener('unhandledrejection', (e) => showError(e.reason, '想定外のエラー（非同期）'));
+
+function enter() {
+  if (S.member?.must_change_pw) { renderForcePasswordChange(enter); return; }
+  mountApp();
+  refreshNoticeBadge();
 }
 
+async function boot() {
+  startVersionCheck();
+  try {
+    if (await loadMe()) enter();
+    else renderLogin(enter);
+  } catch (e) {
+    renderLogin(enter);
+    showError(e, '起動');
+  }
+}
 boot();

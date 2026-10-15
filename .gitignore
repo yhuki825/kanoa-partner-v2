@@ -1,2 +1,3 @@
 .DS_Store
 devserver.py
+tests/.test-accounts.env
