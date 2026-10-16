@@ -2,6 +2,7 @@
 // ・RA: 全件。支払済み・退職・返金済みを記録する（DBの関数でだけ書ける）
 // ・1次パートナー（CA）: 自社が支払先の分を閲覧のみ（2次以降はメニューにも出さない。DBも1行も返さない）
 // ・金額は税抜で保存。消費税・税込の計算は ui/money.js の1か所だけで行う
+// ・支払前に退職したときは、返金ではなく支払額から差し引く（refund_mode='deduct'。0円なら「支払なし」）
 import { register } from '../../router.js';
 import { sb } from '../../supabase.js';
 import { S } from '../../store.js';
@@ -16,7 +17,7 @@ const visible = () => isRA() || (S.role === 'ca' && S.company?.tier === 1);
 const TABS = [
   { key: 'pending', label: '支払待ち', match: (r) => r.pay_status === 'pending' },
   { key: 'paid', label: '支払済み', match: (r) => r.pay_status === 'paid' },
-  { key: 'refund', label: '返金あり', match: (r) => r.refund_status != null },
+  { key: 'refund', label: '返金あり', match: (r) => r.refund_mode === 'refund' && r.refund_status != null },
   { key: 'all', label: 'すべて', match: () => true },
 ];
 
@@ -35,19 +36,48 @@ async function loadRewards() {
   }
 }
 
+// 差し引き（支払前の退職）か
+const isDeduct = (r) => r.refund_mode === 'deduct';
+// 紹介料が0円（未設定）か
+const noFee = (r) => !Number(r.fee_amount);
+// 今の支払額（税抜）= 紹介料 − 差し引き額。差し引きが無ければ紹介料のまま（DBの v2_reward_payable と同じ式）
+const payableOf = (r) => Number(r.fee_amount) - (isDeduct(r) ? Number(r.refund_amount || 0) : 0);
+// 表示する支払額（税抜）: 支払済みなら実際に支払った額（paid_amount）、それ以外は今の支払額
+const payOf = (r) => (r.pay_status === 'paid' && r.paid_amount != null ? Number(r.paid_amount) : payableOf(r));
+// 差し引き額（税込）= 紹介料の税込 − 支払額の税込（税込の3つの数字が必ず合うように、差で出す）
+function deductMoney(r) {
+  const total = totalOf(r.fee_amount) - totalOf(payableOf(r));
+  const net = Number(r.fee_amount) - payableOf(r);
+  return { net, tax: total - net, total };
+}
+
 function moneyCell(amount) {
   const m = withTax(amount);
   if (m.net == null) return '—';
   return `<div class="money"><b class="mono">${fmtYen(m.total)}</b>
     <small class="sub">税抜 <span class="mono">${fmtYen(m.net)}</span>／消費税 <span class="mono">${fmtYen(m.tax)}</span></small></div>`;
 }
+// 紹介料の欄: 差し引きがあれば、その下に支払額（税抜／消費税／税込）を出す
+function feeCell(r) {
+  if (noFee(r)) return '<span class="sub">紹介料 未設定（0円）</span>';
+  const pay = payOf(r);
+  if (pay === Number(r.fee_amount)) return moneyCell(r.fee_amount);
+  return `${moneyCell(r.fee_amount)}
+    <div class="deduct"><small class="sub">${r.pay_status === 'paid' ? '支払額（支払済み）' : '支払額'}</small>${moneyCell(pay)}
+      ${isDeduct(r) ? '<small class="sub">支払前の退職のため差し引き</small>' : ''}</div>`;
+}
 function payCell(r) {
-  return r.pay_status === 'paid'
-    ? `<span class="tag st-done">支払済み</span><br><small class="sub">${fmtDate(r.paid_on)}</small>`
-    : '<span class="tag st-wait">支払待ち</span>';
+  if (r.pay_status === 'paid') return `<span class="tag st-done">支払済み</span><br><small class="sub">${fmtDate(r.paid_on)}</small>`;
+  if (r.pay_status === 'cancelled') return `<span class="tag">支払なし</span><br><small class="sub">${noFee(r) ? '紹介料 未設定（0円）' : '全額差し引き'}</small>`;
+  return '<span class="tag st-wait">支払待ち</span>';
 }
 function refundCell(r) {
   if (r.refund_amount == null) return '—';
+  if (isDeduct(r)) {
+    if (noFee(r)) return '<span class="sub">紹介料 未設定（0円）</span>';
+    return Number(r.refund_amount) === 0 ? '<span class="sub">差し引きなし</span>'
+      : `<b class="mono">${fmtYen(deductMoney(r).total)}</b><br><span class="tag">支払から差し引き</span>`;
+  }
   if (Number(r.refund_amount) === 0) return '<span class="sub">返金なし</span>';
   return `<b class="mono">${fmtYen(totalOf(r.refund_amount))}</b><br>${r.refund_status === 'refunded'
     ? `<span class="tag st-done">返金済み</span> <small class="sub">${fmtDate(r.refunded_on)}</small>`
@@ -56,9 +86,11 @@ function refundCell(r) {
 function actionsOf(r) {
   const a = [];
   if (r.pay_status === 'pending') a.push(['paid', '支払済みにする', 'btn-primary']);
-  else if (!r.refund_status) a.push(['unpaid', '支払済みを取り消す', '']);
-  if (r.refund_status !== 'refunded') a.push(['resign', r.resigned_on ? '退職日を直す' : '退職を記録', '']);
-  if (r.resigned_on && r.refund_status !== 'refunded') a.push(['unresign', '退職の記録を消す', '']);
+  else if (r.pay_status === 'paid' && !r.refund_status) a.push(['unpaid', '支払済みを取り消す', '']);
+  // 差し引き後の額で支払済みのものは、支払額が確定しているので退職の記録を変えない（先に支払済みを取り消す）
+  const fixed = r.refund_status === 'refunded' || (isDeduct(r) && r.pay_status === 'paid');
+  if (!fixed) a.push(['resign', r.resigned_on ? '退職日を直す' : '退職を記録', '']);
+  if (r.resigned_on && !fixed) a.push(['unresign', '退職の記録を消す', '']);
   if (r.refund_status === 'pending' && r.pay_status === 'paid') a.push(['refunded', '返金済みにする', 'btn-primary']);
   return a;
 }
@@ -91,7 +123,9 @@ function aboutHtml(r, extra = '') {
     <dt>求職者</dt><dd>${esc(r.candidate?.name || '—')}</dd>
     <dt>支払先</dt><dd>${esc(r.company?.code || '')} ${esc(r.company?.name || '')}</dd>
     <dt>入社日</dt><dd>${fmtDate(r.joined_on)}</dd>
-    <dt>紹介料（税込）</dt><dd class="mono">${fmtYen(totalOf(r.fee_amount))}</dd>${extra}</dl>`;
+    <dt>紹介料（税込）</dt><dd class="mono">${noFee(r) ? '紹介料 未設定（0円）' : fmtYen(totalOf(r.fee_amount))}</dd>
+    ${payOf(r) !== Number(r.fee_amount) ? `<dt>支払額（税込）</dt><dd><b class="mono">${fmtYen(totalOf(payOf(r)))}</b>
+      ${isDeduct(r) ? '<small class="sub">（支払前の退職のため差し引き）</small>' : ''}</dd>` : ''}${extra}</dl>`;
 }
 
 async function rpc(fn, args, fallback) {
@@ -105,35 +139,47 @@ async function runAction(act, r, reload) {
   if (act === 'paid') {
     const d = await dateModal({ title: '支払済みにする', label: '支払日', value: today(), okLabel: '支払済みにする', about: aboutHtml(r) });
     if (!d) return;
-    await rpc('v2_reward_mark_paid', { p_app: r.application_id, p_paid_on: d }, '支払済みにできませんでした');
+    // 表示していた支払額を送る（その間に差し引きが変わっていたら、DBが止める）
+    await rpc('v2_reward_mark_paid', { p_app: r.application_id, p_paid_on: d, p_expected_payable: payableOf(r) }, '支払済みにできませんでした');
     toast('支払済みにしました');
   } else if (act === 'unpaid') {
-    if (!await confirmDialog(`${name}さんの報酬の「支払済み」を取り消して、支払待ちに戻しますか？`, { okLabel: '取り消す', danger: true })) return;
+    const extraMsg = r.refund_mode === 'refund' ? '\n退職は「支払前の退職」として扱われ、支払額からの差し引きに変わります。' : '';
+    if (!await confirmDialog(`${name}さんの報酬の「支払済み」を取り消して、支払待ちに戻しますか？\n支払日・支払額の記録も消えます（操作の記録には残ります）。${extraMsg}`, { okLabel: '取り消す', danger: true })) return;
     await rpc('v2_reward_unmark_paid', { p_app: r.application_id }, '支払済みを取り消せませんでした');
     toast('支払待ちに戻しました');
   } else if (act === 'resign') {
     const lines = refundPolicyLines(r.refund_policy);
     const policy = `<dt>返金規定</dt><dd>${lines.length ? lines.map(esc).join('<br>') : '返金規定なし（返金は発生しません）'}
-      <br><small class="sub">入社が確定した時点の規定です</small></dd>`;
+      <br><small class="sub">入社が確定した時点の規定です。${r.pay_status === 'paid'
+        ? '支払済みのため、返金を受ける扱いになります。' : 'まだ支払っていないため、支払額から差し引く扱いになります。'}</small></dd>`;
     const d = await dateModal({ title: r.resigned_on ? '退職日を直す' : '退職を記録', label: '退職日', value: r.resigned_on || today(),
       okLabel: '記録する', about: aboutHtml(r, policy) });
     if (!d) return;
     const res = await rpc('v2_reward_record_resignation', { p_app: r.application_id, p_resigned_on: d }, '退職を記録できませんでした');
     const saved = Array.isArray(res) ? res[0] : res;   // 更新後の報酬の行（返金率・返金額はDBが計算）
-    const amt = withTax(saved.refund_amount);
+    const deduct = isDeduct(saved);
+    const amt = deduct ? deductMoney(saved) : withTax(saved.refund_amount);
+    const pay = withTax(payableOf(saved));
     const m = openModal(`
       <h3>退職を記録しました</h3>
       <dl class="kv">
         <dt>退職日</dt><dd>${fmtDate(saved.resigned_on)}（入社日 ${fmtDate(saved.joined_on)}）</dd>
         <dt>返金率</dt><dd class="mono">${saved.refund_rate}%</dd>
-        <dt>返金額</dt><dd>${Number(saved.refund_amount) > 0
+        <dt>${deduct ? '差し引き額' : '返金額'}</dt><dd>${Number(saved.refund_amount) > 0
           ? `<b class="mono">${fmtYen(amt.total)}</b>（税込）<br><small class="sub">税抜 ${fmtYen(amt.net)}／消費税 ${fmtYen(amt.tax)}</small>`
-          : '返金はありません（返金規定の期間外です）'}</dd>
+          : `${deduct ? '差し引き' : '返金'}はありません（返金規定の期間外です）`}</dd>
+        ${deduct ? `<dt>支払額</dt><dd>${saved.pay_status === 'cancelled'
+          ? `<b>支払なし</b>（${noFee(saved) ? '紹介料 未設定（0円）のため' : '全額を差し引いたため'}、支払はありません）`
+          : `<b class="mono">${fmtYen(pay.total)}</b>（税込）<br><small class="sub">税抜 ${fmtYen(pay.net)}／消費税 ${fmtYen(pay.tax)}・支払前の退職のため差し引き</small>`}</dd>` : ''}
       </dl>
       <div class="modal-actions"><button class="btn btn-primary" data-act="ok">閉じる</button></div>`);
     m.el.querySelector('[data-act="ok"]').onclick = () => m.close();
   } else if (act === 'unresign') {
-    if (!await confirmDialog(`${name}さんの退職の記録を消しますか？\n返金率・返金額の記録も消えます。`, { okLabel: '消す', danger: true })) return;
+    const effect = r.refund_mode === 'refund'
+      ? (r.refund_status === 'pending' ? '返金待ちの返金は取り消されます（返金率・返金額の記録も消えます）。支払済みの記録はそのままです。'
+        : '返金率・返金額の記録も消えます。支払済みの記録はそのままです。')
+      : '差し引きの記録が消え、支払額は紹介料の全額に戻ります。';
+    if (!await confirmDialog(`${name}さんの退職の記録を消しますか？\n${effect}`, { okLabel: '消す', danger: true })) return;
     await rpc('v2_reward_record_resignation', { p_app: r.application_id, p_resigned_on: null }, '退職の記録を消せませんでした');
     toast('退職の記録を消しました');
   } else if (act === 'refunded') {
@@ -154,9 +200,10 @@ async function render(el, params) {
   const ra = isRA();
   const month = today().slice(0, 7);
   const sum = (xs, f) => xs.reduce((s, x) => s + (f(x) || 0), 0);
-  const payWait = sum(rows.filter((r) => r.pay_status === 'pending'), (r) => totalOf(r.fee_amount));
-  const refundWait = sum(rows.filter((r) => r.refund_status === 'pending'), (r) => totalOf(r.refund_amount));
-  const paidMonth = sum(rows.filter((r) => r.pay_status === 'paid' && String(r.paid_on || '').startsWith(month)), (r) => totalOf(r.fee_amount));
+  // 支払の合計は「支払額」（差し引き後）で数える。返金待ちは返金の扱い（支払済みのあとの退職）だけ
+  const payWait = sum(rows.filter((r) => r.pay_status === 'pending' && payableOf(r) > 0), (r) => totalOf(payableOf(r)));   // 0円の行は数えない
+  const refundWait = sum(rows.filter((r) => r.refund_mode === 'refund' && r.refund_status === 'pending'), (r) => totalOf(r.refund_amount));
+  const paidMonth = sum(rows.filter((r) => r.pay_status === 'paid' && String(r.paid_on || '').startsWith(month)), (r) => totalOf(payOf(r)));   // 実際に支払った額
 
   el.innerHTML = `
     ${ra ? '' : `<p class="callout">KANOAからあなたの会社への紹介料（成約報酬）の記録です。支払・退職・返金の記録はKANOAが行います（この画面は閲覧のみです）。</p>`}
@@ -170,15 +217,15 @@ async function render(el, params) {
         <a role="tab" class="tab ${t.key === tab.key ? 'active' : ''}" aria-selected="${t.key === tab.key}" href="#/rewards?tab=${t.key}">
           ${esc(t.label)} <span class="tab-count">${rows.filter(t.match).length}</span></a>`).join('')}</div>
       ${list.length ? `<div class="table-wrap"><table class="table reward-table">
-        <thead><tr><th>求職者</th><th>求人企業・求人</th><th>支払先</th><th>入社日</th><th>紹介料（税込）<br><small>税抜／消費税</small></th>
-          <th>支払状態</th><th>退職日</th><th>返金率</th><th>返金額（税込）</th>${ra ? '<th>操作</th>' : ''}</tr></thead>
+        <thead><tr><th>求職者</th><th>求人企業・求人</th><th>支払先</th><th>入社日</th><th>紹介料・支払額（税込）<br><small>税抜／消費税</small></th>
+          <th>支払状態</th><th>退職日</th><th>返金率</th><th>返金・差し引き（税込）</th>${ra ? '<th>操作</th>' : ''}</tr></thead>
         <tbody>${list.map((r) => `
           <tr data-app="${esc(r.application_id)}">
             <td><a href="#/selection?id=${esc(r.application_id)}"><b>${esc(r.candidate?.name || '（表示できません）')}</b></a></td>
             <td>${esc(r.job?.client?.name || '—')}<br><small class="sub">${esc(r.job?.title || '（求人を表示できません）')}</small></td>
             <td><span class="mono">${esc(r.company?.code || '')}</span><br><small class="sub">${esc(r.company?.name || '')}</small></td>
             <td>${fmtDate(r.joined_on)}</td>
-            <td>${moneyCell(r.fee_amount)}</td>
+            <td>${feeCell(r)}</td>
             <td>${payCell(r)}</td>
             <td>${r.resigned_on ? fmtDate(r.resigned_on) : '—'}</td>
             <td class="mono">${r.refund_rate == null ? '—' : `${r.refund_rate}%`}</td>
@@ -189,7 +236,7 @@ async function render(el, params) {
       : `<div class="empty">${rows.length ? 'このタブに該当する報酬はありません。'
           : ra ? 'まだ報酬はありません。社内求人の選考で最後の段階が「通過」になると、入社として報酬がここに並びます。'
             : 'まだ報酬はありません。あなたの会社経由の求職者が入社すると、ここに並びます。'}</div>`}
-      <p class="hint reward-note">金額は求人の紹介料（税抜）に消費税${TAX_PERCENT}%（1円未満切り捨て）を足して表示しています。紹介料と返金規定は、入社が確定した時点のもので固定されます。</p>
+      <p class="hint reward-note">金額は求人の紹介料（税抜）に消費税${TAX_PERCENT}%（1円未満切り捨て）を足して表示しています。紹介料と返金規定は、入社が確定した時点のもので固定されます。支払前に退職した場合は、返金ではなく支払額から差し引きます（全額を差し引くと「支払なし」）。</p>
     </section>`;
 
   if (!ra) return;

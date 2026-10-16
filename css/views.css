@@ -259,3 +259,4 @@ dd.url { word-break: break-all; }
 .reward-table td:nth-child(3) { min-width: 140px; }
 .reward-table td:nth-child(4), .reward-table td:nth-child(7) { white-space: nowrap; }
 .reward-table .tag { white-space: nowrap; }
+.reward-table .deduct { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--c-border); display: flex; flex-direction: column; gap: 2px; }

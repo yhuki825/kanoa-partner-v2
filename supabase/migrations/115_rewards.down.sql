@@ -1,4 +1,5 @@
--- 115_rewards.sql・116_rewards_fixes.sql・117_rewards_fixes2.sql を元に戻す（報酬・返金規定のデータも消える）
+-- 115_rewards.sql と、それを直した 116〜119（116_rewards_fixes / 117_rewards_fixes2 / 118_reward_deduction / 119_reward_paid_amount）を元に戻す
+-- （報酬・返金規定のデータも消える。118・119 で足した列・制約は報酬の表と一緒に消え、関数は下で消す）
 -- ※ 116/117 が自動で入れた「最後の段階の実施日」（v2_milestones.done_on）はデータとして残り、戻らない
 -- ※ begin/commit は書いていない。適用するときはトランザクションの中で流すこと
 -- 1) v2_milestone_save を 115 適用前の本体に戻す（2026-10-16 にDBから読んだ本体そのまま。prosrc の md5 = 89ae6e5da71f90df5474bf9b10f97d92）
@@ -45,8 +46,9 @@ alter table v2_job_kanoa_fees drop constraint if exists v2_job_kanoa_fees_fee_wh
 alter table v2_job_shares     drop constraint if exists v2_job_shares_fee_override_whole;
 alter table v2_job_offers     drop constraint if exists v2_job_offers_fee_display_whole;
 
--- 3) 115・116 で足した関数と表を消す
-drop function if exists v2_job_refund_policy_save(uuid, jsonb), v2_job_refund_policy_save(uuid, jsonb, int), v2_reward_mark_paid(uuid, date), v2_reward_unmark_paid(uuid),
+-- 3) 115〜119 で足した関数と表を消す
+drop function if exists v2_job_refund_policy_save(uuid, jsonb), v2_job_refund_policy_save(uuid, jsonb, int), v2_reward_mark_paid(uuid, date),
+  v2_reward_mark_paid(uuid, date, numeric), v2_reward_payable(v2_rewards), v2_reward_unmark_paid(uuid),
   v2_reward_record_resignation(uuid, date), v2_reward_mark_refunded(uuid, date), v2_reward_lock(uuid),
   v2_refund_policy_normalize(jsonb), v2_refund_rate(jsonb, date, date);
 drop table if exists v2_rewards, v2_job_refund_policies;
