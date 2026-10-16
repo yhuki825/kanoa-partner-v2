@@ -22,7 +22,15 @@ get(){ curl -s "$BASE/rest/v1/$2" -H "apikey: $AK" -H "Authorization: Bearer $1"
 code(){ python3 -c "import json,sys;d=json.load(sys.stdin);print((d.get('code') or d.get('error')) if isinstance(d,dict) else 'none')"; }
 titles(){ python3 -c "import json,sys;d=json.load(sys.stdin);print(','.join(sorted(x['title'] for x in d if 'テスト' in x['title'])) if isinstance(d,list) else 'ERR')"; }
 sql(){ python3 -c "import json,sys;print(json.dumps({'query':sys.argv[1]}))" "$1" > "$TMP/q.json"
-  curl -s -X POST "https://api.supabase.com/v1/projects/oicpfsfvywdhdriqehyr/database/query" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @"$TMP/q.json"; }
+  # 通信の一時的な失敗（接続エラー・429・5xx・空応答）だけ最大3回やり直す。SQLのエラー（400台）はそのまま返す
+  local n=0 st
+  while :; do
+    st=$(curl -s -o "$TMP/r.json" -w '%{http_code}' -X POST "https://api.supabase.com/v1/projects/oicpfsfvywdhdriqehyr/database/query" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @"$TMP/q.json")
+    n=$((n+1))
+    case "$st" in 429|5??|000) ;; *) [ -s "$TMP/r.json" ] && break ;; esac
+    [ $n -ge 3 ] && break; sleep $((n*2))
+  done
+  cat "$TMP/r.json"; }
 one(){ sql "$1" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(list(d[0].values())[0])'; }
 
 A=$(login "$A_OWNER_ID" "$A_OWNER_PW"); C=$(login "$A_CA_ID" "$A_CA_PW"); B=$(login "$B_OWNER_ID" "$B_OWNER_PW")

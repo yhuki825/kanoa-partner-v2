@@ -22,7 +22,15 @@ codes(){ python3 -c "import json,sys;d=json.load(sys.stdin);print(','.join(sorte
 # 使い方: j キー 値 キー 値 …（値を = で始めると、数値・null・配列などをそのまま入れる）
 j(){ python3 -c 'import json,sys;a=sys.argv[1:];print(json.dumps({a[i]:(json.loads(a[i+1][1:]) if a[i+1].startswith("=") else a[i+1]) for i in range(0,len(a),2)},ensure_ascii=False))' "$@"; }
 sql(){ python3 -c "import json,sys;print(json.dumps({'query':sys.argv[1]}))" "$1" > "$TMP/q.json"
-  curl -s -X POST "https://api.supabase.com/v1/projects/oicpfsfvywdhdriqehyr/database/query" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @"$TMP/q.json"; }
+  # 通信の一時的な失敗（接続エラー・429・5xx・空応答）だけ最大3回やり直す。SQLのエラー（400台）はそのまま返す
+  local n=0 st
+  while :; do
+    st=$(curl -s -o "$TMP/r.json" -w '%{http_code}' -X POST "https://api.supabase.com/v1/projects/oicpfsfvywdhdriqehyr/database/query" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @"$TMP/q.json")
+    n=$((n+1))
+    case "$st" in 429|5??|000) ;; *) [ -s "$TMP/r.json" ] && break ;; esac
+    [ $n -ge 3 ] && break; sleep $((n*2))
+  done
+  cat "$TMP/r.json"; }
 
 A=$(login "$A_OWNER_ID" "$A_OWNER_PW"); C=$(login "$A_CA_ID" "$A_CA_PW"); B=$(login "$B_OWNER_ID" "$B_OWNER_PW")
 ok "3アカウントでログインできる" "$([ -n "$A" ] && [ -n "$C" ] && [ -n "$B" ] && echo y)" "y"

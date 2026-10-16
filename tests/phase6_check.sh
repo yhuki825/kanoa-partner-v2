@@ -5,7 +5,7 @@
 #                       B社の「テスト次郎」の選考（B00001→A99999→KANOA、KANOA受入済み）
 # 流れ: 最初に次郎の選考と報酬を決まった状態に戻す（このテストの行だけ）→ RAとして返金規定を設定し、段階を順に通過させて入社
 #       → 見える範囲・権限・返金の計算・取り消しの制限を確かめる → 最後に次郎の選考を最初の状態に戻す
-#       （画面で報酬を確かめたいときは KEEP_REWARD=1 bash tests/phase6_check.sh。最後に次郎を「入社済み・支払待ち・退職なし」にして残す）
+#       （既定では最後に次郎を「入社済み・支払待ち・退職なし」にして残す＝画面での確認用。消したいときは CLEAN_REWARD=1 bash tests/phase6_check.sh）
 # 118（支払前の退職は支払額から差し引く。全額なら支払なし）と 119（支払った額の記録・表示と違う支払額の拒否・守りの制約）の確認も含む
 set -u
 cd "$(dirname "$0")/.."
@@ -28,7 +28,15 @@ rpc(){ curl -s -X POST "$BASE/rest/v1/rpc/$2" -H "apikey: $AK" -H "Authorization
 len(){ python3 -c "import json,sys;d=json.load(sys.stdin);print(len(d) if isinstance(d,list) else 'ERR:'+str(d)[:80])"; }
 code(){ python3 -c "import json,sys;d=json.load(sys.stdin);print(d.get('code') if isinstance(d,dict) else 'none')"; }
 sql(){ python3 -c "import json,sys;print(json.dumps({'query':sys.argv[1]}))" "$1" > "$TMP/q.json"
-  curl -s -X POST "https://api.supabase.com/v1/projects/oicpfsfvywdhdriqehyr/database/query" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @"$TMP/q.json"; }
+  # 通信の一時的な失敗（接続エラー・429・5xx・空応答）だけ最大3回やり直す。SQLのエラー（400台）はそのまま返す
+  local n=0 st
+  while :; do
+    st=$(curl -s -o "$TMP/r.json" -w '%{http_code}' -X POST "https://api.supabase.com/v1/projects/oicpfsfvywdhdriqehyr/database/query" -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" --data @"$TMP/q.json")
+    n=$((n+1))
+    case "$st" in 429|5??|000) ;; *) [ -s "$TMP/r.json" ] && break ;; esac
+    [ $n -ge 3 ] && break; sleep $((n*2))
+  done
+  cat "$TMP/r.json"; }
 # SQLの結果の1行目・1列目（エラーなら ERR:…）
 first(){ python3 -c 'import json,sys;d=json.load(sys.stdin);print(list(d[0].values())[0] if isinstance(d,list) and d else "ERR:"+str(d)[:200])'; }
 one(){ sql "$1" | first; }
@@ -285,9 +293,9 @@ ok "返金済みの後は退職日を変えられない"        "$(resign "'2027
 ok "返金済みの後は支払済みを取り消せない"      "$(ra "select v2_reward_unmark_paid('$JIRO')" | errc)" "P0409"
 ok "1次（A社）から返金済みの記録が見える"      "$(get "$A" "v2_rewards?select=refund_status,refund_amount&application_id=eq.$JIRO" | python3 -c 'import json,sys;d=json.load(sys.stdin);print("%s|%s" % (d[0]["refund_status"], d[0]["refund_amount"]) if isinstance(d,list) and d else "ERR")')" "refunded|300000"
 
-if [ "${KEEP_REWARD:-}" = "1" ]; then
+if [ "${CLEAN_REWARD:-}" != "1" ]; then
   # 画面で試せるように、次郎を「入社済み・支払待ち・退職なし」にして残す（次に流すときは最初に戻す）
-  ok "後片付け（KEEP_REWARD=1）: 次郎の選考をいったん最初の状態に戻した" "$(reset_jiro)" "[]"
+  ok "後片付け（画面確認用に残す）: 次郎の選考をいったん最初の状態に戻した" "$(reset_jiro)" "[]"
   ok "RA: 一次面接を通過（画面確認用）" "$(ms 2 2026-10-22 passed | errc)" "none"
   ok "RA: 最終面接を通過（画面確認用）" "$(ms 3 2026-10-26 passed | errc)" "none"
   ok "RA: 内定を通過（画面確認用）"     "$(ms 4 2026-10-28 passed | errc)" "none"
@@ -295,6 +303,6 @@ if [ "${KEEP_REWARD:-}" = "1" ]; then
   ok "画面確認用: 次郎の報酬は A99999 宛て・支払待ち・退職なしで残した" \
     "$(one "select format('%s|%s|%s|%s|%s|%s', co.code, r.joined_on, r.fee_amount, r.pay_status, r.resigned_on, r.paid_amount) from v2_rewards r join v2_companies co on co.id=r.payee_company_id where r.application_id='$JIRO'")" "A99999|2026-11-02|300000|pending||"
 else
-  ok "後片付け: 次郎の選考を最初の状態に戻した" "$(reset_jiro)" "[]"
+  ok "後片付け（CLEAN_REWARD=1）: 次郎の選考を最初の状態に戻した" "$(reset_jiro)" "[]"
 fi
 echo "----"; echo "PASS $pass / FAIL $fail"; [ "$fail" -eq 0 ]
