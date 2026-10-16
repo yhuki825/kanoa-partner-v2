@@ -7,6 +7,7 @@
 #       → 見える範囲・権限・返金の計算・取り消しの制限を確かめる → 最後に次郎の選考を最初の状態に戻す
 #       （既定では最後に次郎を「入社済み・支払待ち・退職なし」にして残す＝画面での確認用。消したいときは CLEAN_REWARD=1 bash tests/phase6_check.sh）
 # 118（支払前の退職は支払額から差し引く。全額なら支払なし）と 119（支払った額の記録・表示と違う支払額の拒否・守りの制約）の確認も含む
+# 120（多段報酬）から1つの選考に段ごとの報酬の行がある。このテストは KANOA→1次（A99999）の行だけを見る（下の段は phase7_check.sh）
 set -u
 cd "$(dirname "$0")/.."
 source tests/.test-accounts.env
@@ -56,6 +57,11 @@ CLAIMS=$(j sub "$RAUID" role authenticated)
 AUID=$(one "select user_id from v2_members where login_id='A99999-01'")
 CLAIMS_A=$(j sub "$AUID" role authenticated)
 ACO=$(one "select id from v2_companies where code='A99999'")
+# 次郎の KANOA→1次 の報酬の行（KANOAが払う行＝payer_company_id が空）。関数には行ID（p_reward）を渡す
+KW="application_id='$JIRO' and payer_company_id is null"
+KR="(select id from v2_rewards where $KW)"
+# その行の今の version（121 から4つの操作は読んだときの version を渡す。古ければ P0409）
+KV="(select version from v2_rewards where $KW)"
 # RAとして実行（ログイン中のRAと同じ権限の判定になる）
 ra(){ sql "begin; select set_config('request.jwt.claims','$CLAIMS',true); set local role authenticated; $1; commit;"; }
 # A社の代表として実行
@@ -97,16 +103,16 @@ ms(){ local d="null"; [ "$2" != "null" ] && d="'$2'::date"
 # 予定日と実施日を別々に保存: msx 段階番号 予定日 実施日 結果（日付は 'YYYY-MM-DD' または null）
 msx(){ local s="null" d="null"; [ "$2" != "null" ] && s="'$2'::date"; [ "$3" != "null" ] && d="'$3'::date"
   ra "select v2_milestone_save(m.id, m.version, $s, $d, '$4') from v2_milestones m where m.application_id='$JIRO' and m.seq=$1"; }
-rew(){ one "select format('%s|%s|%s|%s', r.pay_status, r.fee_amount, r.joined_on, r.paid_on) from v2_rewards r where r.application_id='$JIRO'"; }
+rew(){ one "select format('%s|%s|%s|%s', r.pay_status, r.fee_amount, r.joined_on, r.paid_on) from v2_rewards r where r.$KW"; }
 # 退職の記録: 返金率|返金・差し引き額|返金の状態|扱い（deduct=差し引き／refund=返金）|支払の状態
-resign(){ ra "select format('%s|%s|%s|%s|%s', r.refund_rate, r.refund_amount, r.refund_status, r.refund_mode, r.pay_status) r from v2_reward_record_resignation('$JIRO', $1) r"; }
+resign(){ ra "select format('%s|%s|%s|%s|%s', r.refund_rate, r.refund_amount, r.refund_status, r.refund_mode, r.pay_status) r from v2_reward_record_resignation($KR, $KV, $1) r"; }
 # 支払額（税抜。差し引きがあれば紹介料から引く）|支払の状態|扱い
 # 支払済みにする（RA）: paid 支払日。画面と同じく「今の支払額」を確認用に送る
-PAYX="(select fee_amount - coalesce(case when refund_mode='deduct' then refund_amount end, 0) from v2_rewards where application_id='$JIRO')"
-paid(){ ra "select v2_reward_mark_paid('$JIRO', '$1', $PAYX)"; }
+PAYX="(select fee_amount - coalesce(case when refund_mode='deduct' then refund_amount end, 0) from v2_rewards where $KW)"
+paid(){ ra "select v2_reward_mark_paid($KR, $KV, '$1', $PAYX)"; }
 # 支払の記録: 支払の状態|支払日|実際に支払った額
-paidamt(){ one "select format('%s|%s|%s', pay_status, paid_on, paid_amount) from v2_rewards where application_id='$JIRO'"; }
-payable(){ one "select format('%s|%s|%s', fee_amount - coalesce(case when refund_mode='deduct' then refund_amount end, 0), pay_status, refund_mode) from v2_rewards where application_id='$JIRO'"; }
+paidamt(){ one "select format('%s|%s|%s', pay_status, paid_on, paid_amount) from v2_rewards where $KW"; }
+payable(){ one "select format('%s|%s|%s', fee_amount - coalesce(case when refund_mode='deduct' then refund_amount end, 0), pay_status, refund_mode) from v2_rewards where $KW"; }
 reset_jiro(){ sql "delete from v2_rewards where application_id='$JIRO';
   update v2_milestones set result='pending', done_on=null, scheduled_on=null, version=version where application_id='$JIRO' and seq>1;
   update v2_milestones set result='passed', done_on='2026-10-20', scheduled_on='2026-10-20', version=version where application_id='$JIRO' and seq=1;
@@ -140,19 +146,19 @@ ok "最後の段階の前は報酬の行が無い"          "$(one "select count
 ok "RA: 入社（最後の段階）を通過"            "$(ms "$LAST" 2026-11-02 passed | errc)" "none"
 ok "選考は終了・通過になる"                  "$(one "select stage||'|'||result from v2_applications where id='$JIRO'")" "closed|passed"
 ok "報酬: 支払先A99999・税抜300000円・入社日・支払待ち" \
-  "$(one "select format('%s|%s|%s|%s', co.code, r.fee_amount, r.joined_on, r.pay_status) from v2_rewards r join v2_companies co on co.id=r.payee_company_id where r.application_id='$JIRO'")" "A99999|300000|2026-11-02|pending"
-ok "報酬: 入社時の返金規定が記録される"      "$(one "select (refund_policy = '$POL'::jsonb)::text from v2_rewards where application_id='$JIRO'")" "true"
+  "$(one "select format('%s|%s|%s|%s', co.code, r.fee_amount, r.joined_on, r.pay_status) from v2_rewards r join v2_companies co on co.id=r.payee_company_id where r.application_id='$JIRO' and r.payer_company_id is null")" "A99999|300000|2026-11-02|pending"
+ok "報酬: 入社時の返金規定が記録される"      "$(one "select (refund_policy = '$POL'::jsonb)::text from v2_rewards where $KW")" "true"
 ok "RA: 求人の返金規定を変更（固定の確認用）" "$(ra "select v2_job_refund_policy_save('$JOB', '$POL6'::jsonb, $PV)::text r" | errc)" "none"
-ok "求人の返金規定を変えても、記録済みの報酬の規定は変わらない" "$(one "select (refund_policy = '$POL'::jsonb)::text from v2_rewards where application_id='$JIRO'")" "true"
+ok "求人の返金規定を変えても、記録済みの報酬の規定は変わらない" "$(one "select (refund_policy = '$POL'::jsonb)::text from v2_rewards where $KW")" "true"
 ok "RA: 求人の返金規定を元に戻す"            "$(ra "select (v2_job_refund_policy_save('$JOB', '$POL'::jsonb, $PV) = '$POL'::jsonb)::text r" | first)" "true"
 ok "求人の紹介料を変えても、記録済みの報酬の額は変わらない（変更は取り消す）" \
-  "$(sql "begin; update v2_job_kanoa_fees set fee=999999, version=version where job_id='$JOB'; select fee_amount::text r from v2_rewards where application_id='$JIRO'; rollback;" | first)" "300000"
+  "$(sql "begin; update v2_job_kanoa_fees set fee=999999, version=version where job_id='$JOB'; select fee_amount::text r from v2_rewards where $KW; rollback;" | first)" "300000"
 ok "KANOA自身の求職者は入社しても報酬の行ができない（中の変更は取り消す）" \
   "$(ra "${KANOA_DO//__JOB__/$JOB}" | result)" "closed/passed|0"
 
 echo "== 入社日の修正と、入社の取り消し（支払前） =="
 ok "RA: 入社日を直す（最後の段階の実施日）"  "$(ms "$LAST" 2026-11-03 passed | errc)" "none"
-ok "報酬の入社日も直る"                      "$(one "select joined_on from v2_rewards where application_id='$JIRO'")" "2026-11-03"
+ok "報酬の入社日も直る"                      "$(one "select joined_on from v2_rewards where $KW")" "2026-11-03"
 ok "RA: 入社日を元に戻す"                    "$(ms "$LAST" 2026-11-02 passed | errc)" "none"
 ok "RA: 入社を未定に戻す（支払前・退職の記録なし）" "$(ms "$LAST" null pending | errc)" "none"
 ok "支払前なら報酬の行は消える"              "$(one "select count(*) from v2_rewards where application_id='$JIRO'")" "0"
@@ -165,13 +171,13 @@ TODAY=$(one "select (now() at time zone 'Asia/Tokyo')::date")   # 日本時間�
 ok "RA: 入社をいったん未定に戻す"            "$(ms "$LAST" null pending | errc)" "none"
 ok "RA: 入社を実施日なしで通過にする"        "$(msx "$LAST" null null passed | errc)" "none"
 ok "実施日なしで通過 → 最後の段階の実施日に今日（日本時間）が入る" "$(one "select done_on from v2_milestones where application_id='$JIRO' and seq=$LAST")" "$TODAY"
-ok "報酬の入社日も今日（日本時間）になる"                "$(one "select joined_on from v2_rewards where application_id='$JIRO'")" "$TODAY"
+ok "報酬の入社日も今日（日本時間）になる"                "$(one "select joined_on from v2_rewards where $KW")" "$TODAY"
 ok "RA: 別の段階（一次面接）の予定日を直す"  "$(msx 2 2026-10-23 2026-10-22 passed | errc)" "none"
-ok "別の段階を直しても報酬の入社日は変わらない" "$(one "select joined_on from v2_rewards where application_id='$JIRO'")" "$TODAY"
+ok "別の段階を直しても報酬の入社日は変わらない" "$(one "select joined_on from v2_rewards where $KW")" "$TODAY"
 ok "（116より前の形を再現: 入社日 2026-11-02・最後の段階の実施日なし）" \
   "$(sql "update v2_rewards set joined_on='2026-11-02', version=version where application_id='$JIRO'; update v2_milestones set done_on=null, version=version where application_id='$JIRO' and seq=$LAST;")" "[]"
 ok "RA: 別の段階（最終面接）を保存"          "$(msx 3 2026-10-27 2026-10-26 passed | errc)" "none"
-ok "別の段階の保存では、入社日が今日にずれない" "$(one "select joined_on from v2_rewards where application_id='$JIRO'")" "2026-11-02"
+ok "別の段階の保存では、入社日が今日にずれない" "$(one "select joined_on from v2_rewards where $KW")" "2026-11-02"
 ok "RA: 最後の段階の実施日を 2026-11-02 に戻す" "$(ms "$LAST" 2026-11-02 passed | errc)" "none"
 ok "報酬は元のまま（支払待ち・入社日 2026-11-02）" "$(rew)" "pending|300000|2026-11-02|"
 ok "RA: 報酬があるときに、最後の段階を実施日なしで保存し直す" "$(msx "$LAST" null null passed | errc)" "none"
@@ -179,16 +185,16 @@ ok "保存し直しても入社日は動かない（今日にならない）" "$
 ok "最後の段階の実施日には入社日が入る"      "$(one "select done_on from v2_milestones where application_id='$JIRO' and seq=$LAST")" "2026-11-02"
 ok "外部求人: 最後の段階を実施日なしで通過にしても実施日は空のまま（中の変更は取り消す）" "$(as_a "$EXT_DO" | result)" "null/closed-passed"
 ok "月末の入社（1/31）・規定 1か月以内100%: 2/28 の退職 → 100%（変更は取り消す）" \
-  "$(sql "begin; update v2_rewards set joined_on='2026-01-31', refund_policy='$POL1'::jsonb, version=version where application_id='$JIRO'; select set_config('request.jwt.claims','$CLAIMS',true); set local role authenticated; select format('%s|%s', r.refund_rate, r.refund_amount) r from v2_reward_record_resignation('$JIRO', '2026-02-28') r; rollback;" | first)" "100|300000"
+  "$(sql "begin; update v2_rewards set joined_on='2026-01-31', refund_policy='$POL1'::jsonb, version=version where $KW; select set_config('request.jwt.claims','$CLAIMS',true); set local role authenticated; select format('%s|%s', r.refund_rate, r.refund_amount) r from v2_reward_record_resignation($KR, $KV, '2026-02-28') r; rollback;" | first)" "100|300000"
 ok "月末の入社（1/31）・規定 1か月以内100%: 3/1 の退職 → 0%（変更は取り消す）" \
-  "$(sql "begin; update v2_rewards set joined_on='2026-01-31', refund_policy='$POL1'::jsonb, version=version where application_id='$JIRO'; select set_config('request.jwt.claims','$CLAIMS',true); set local role authenticated; select format('%s|%s', r.refund_rate, r.refund_amount) r from v2_reward_record_resignation('$JIRO', '2026-03-01') r; rollback;" | first)" "0|0"
-ok "取り消した後も報酬は元のまま"            "$(one "select format('%s|%s|%s', joined_on, (refund_policy = '$POL'::jsonb)::text, resigned_on) from v2_rewards where application_id='$JIRO'")" "2026-11-02|true|"
+  "$(sql "begin; update v2_rewards set joined_on='2026-01-31', refund_policy='$POL1'::jsonb, version=version where $KW; select set_config('request.jwt.claims','$CLAIMS',true); set local role authenticated; select format('%s|%s', r.refund_rate, r.refund_amount) r from v2_reward_record_resignation($KR, $KV, '2026-03-01') r; rollback;" | first)" "0|0"
+ok "取り消した後も報酬は元のまま"            "$(one "select format('%s|%s|%s', joined_on, (refund_policy = '$POL'::jsonb)::text, resigned_on) from v2_rewards where $KW")" "2026-11-02|true|"
 
 echo "== 金額は1円単位（116） =="
 ok "紹介料（基本額）に小数は入らない"        "$(sql "update v2_job_kanoa_fees set fee=300000.5, version=version where job_id='$JOB'" | errc)" "23514"
 ok "会社ごとの紹介料に小数は入らない"        "$(sql "update v2_job_shares set fee_override=1000.5, version=version where job_id='$JOB'" | errc)" "23514"
 ok "フロント向けの表示額に小数は入らない"    "$(sql "insert into v2_job_offers(job_id, company_id, fee_display) values ('$JOB', (select id from v2_companies where code='A99999'), 1.5)" | errc)" "23514"
-ok "報酬の額に小数は入らない"                "$(sql "update v2_rewards set fee_amount=300000.5, version=version where application_id='$JIRO'" | errc)" "23514"
+ok "報酬の額に小数は入らない"                "$(sql "update v2_rewards set fee_amount=300000.5, version=version where $KW" | errc)" "23514"
 OFFER_BEFORE=$(one "select fee_display from v2_job_offers where job_id='$JOB' and company_id='$ACO'")
 ok "1次（A社の代表）: フロント向けの表示額に NaN は入らない" "$(curl -s -X PATCH "$BASE/rest/v1/v2_job_offers?job_id=eq.$JOB&company_id=eq.$ACO" -H "apikey: $AK" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d "$(j fee_display NaN)" | code)" "23514"
 ok "1次（A社の代表）: フロント向けの表示額に Infinity は入らない" "$(curl -s -X PATCH "$BASE/rest/v1/v2_job_offers?job_id=eq.$JOB&company_id=eq.$ACO" -H "apikey: $AK" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d "$(j fee_display Infinity)" | code)" "23514"
@@ -196,27 +202,29 @@ ok "拒否の後もフロント向けの表示額は元のまま" "$(one "select
 ok "紹介料（基本額）に NaN は入らない"       "$(sql "update v2_job_kanoa_fees set fee='NaN', version=version where job_id='$JOB'" | errc)" "23514"
 ok "紹介料（基本額）に Infinity は入らない"  "$(sql "update v2_job_kanoa_fees set fee='Infinity', version=version where job_id='$JOB'" | errc)" "23514"
 ok "紹介料（基本額）に1兆円以上は入らない"   "$(sql "update v2_job_kanoa_fees set fee=1000000000000, version=version where job_id='$JOB'" | errc)" "23514"
-ok "小数の拒否の後も紹介料・報酬は元のまま"  "$(one "select format('%s|%s', (select fee from v2_job_kanoa_fees where job_id='$JOB'), (select fee_amount from v2_rewards where application_id='$JIRO'))")" "300000|300000"
+ok "小数の拒否の後も紹介料・報酬は元のまま"  "$(one "select format('%s|%s', (select fee from v2_job_kanoa_fees where job_id='$JOB'), (select fee_amount from v2_rewards where $KW))")" "300000|300000"
 ok "報酬が残っている選考は消せない（記録を残す）" "$(sql "begin; delete from v2_applications where id='$JIRO'; rollback;" | errc)" "23503"
 
 echo "== 見える範囲 =="
-ok "1次（A社の代表）は自社が支払先の報酬を読める" "$(get "$A" "v2_rewards?select=fee_amount,company:v2_companies!v2_rewards_payee_company_id_fkey(code)&application_id=eq.$JIRO" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(",".join("%s|%s" % (x["company"]["code"], x["fee_amount"]) for x in d) if isinstance(d,list) else "ERR")')" "A99999|300000"
-ok "1次（A社の代表でないCA）も読める"        "$(get "$AC" "v2_rewards?select=application_id&application_id=eq.$JIRO" | len)" "1"
-ok "2次（B社）は次郎の報酬を読めない"        "$(get "$B" "v2_rewards?select=application_id&application_id=eq.$JIRO" | len)" "0"
-ok "2次（B社）に見える報酬の行は、B社が支払先のものだけ（＝1行も無い）" \
-  "$(get "$B" 'v2_rewards?select=payee_company_id' | python3 -c "import json,sys;d=json.load(sys.stdin);print('OK' if isinstance(d,list) and all(x['payee_company_id']=='$BCO' for x in d) else 'NG:'+str(d)[:120])")" "OK"
-ok "2次（B社）は選考から報酬をたどっても読めない" "$(get "$B" "v2_applications?select=id,reward:v2_rewards!v2_rewards_application_id_fkey(fee_amount)&id=eq.$JIRO" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(d[0]["reward"] if isinstance(d,list) and d else "ERR:"+str(d)[:120])')" "None"
+ok "1次（A社の代表）は自社が支払先の報酬を読める" "$(get "$A" "v2_rewards?select=fee_amount,company:v2_companies!v2_rewards_payee_company_id_fkey(code)&application_id=eq.$JIRO&payee_company_id=eq.$ACO" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(",".join("%s|%s" % (x["company"]["code"], x["fee_amount"]) for x in d) if isinstance(d,list) else "ERR")')" "A99999|300000"
+ok "1次（A社の代表でないCA）も読める"        "$(get "$AC" "v2_rewards?select=application_id&application_id=eq.$JIRO&payer_company_id=is.null" | len)" "1"
+ok "2次（B社）は次郎の KANOA→1次 の報酬を読めない" "$(get "$B" "v2_rewards?select=application_id&application_id=eq.$JIRO&payer_company_id=is.null" | len)" "0"
+ok "2次（B社）に見える報酬の行は、B社が受け取る分か支払う分だけ（KANOAが払う行は無い。対照: 次郎の 160000 の行は見える）" \
+  "$(get "$B" 'v2_rewards?select=application_id,fee_amount,payee_company_id,payer_company_id' | python3 -c "import json,sys;d=json.load(sys.stdin);ok=isinstance(d,list) and all('$BCO' in (x['payee_company_id'], x['payer_company_id']) and x['payer_company_id'] is not None for x in d) and any(x['application_id']=='$JIRO' and str(x['fee_amount'])=='160000' for x in d);print('OK' if ok else 'NG:'+str(d)[:160])")" "OK"
+ok "2次（B社）は選考から報酬をたどっても、自社が受け取る分（160000）しか読めない" "$(get "$B" "v2_applications?select=id,reward:v2_rewards!v2_rewards_application_id_fkey(fee_amount)&id=eq.$JIRO" | python3 -c 'import json,sys;d=json.load(sys.stdin);print(",".join(str(x["fee_amount"]) for x in d[0]["reward"]) if isinstance(d,list) and d else "ERR:"+str(d)[:120])')" "160000"
 ok "未ログインでは報酬が見えない"            "$(curl -s "$BASE/rest/v1/v2_rewards?select=application_id&application_id=eq.$JIRO" -H "apikey: $AK" | len)" "0"
 
 echo "== 操作の権限 =="
-ok "1次（A社）は支払済みにできない"          "$(rpc "$A" v2_reward_mark_paid "$(j p_app "$JIRO" p_paid_on 2026-11-30 p_expected_payable '=300000')" | code)" "P0403"
-ok "1次（A社のCA）は支払済みにできない"      "$(rpc "$AC" v2_reward_mark_paid "$(j p_app "$JIRO" p_paid_on 2026-11-30 p_expected_payable '=300000')" | code)" "P0403"
-ok "2次（B社）は支払済みにできない"          "$(rpc "$B" v2_reward_mark_paid "$(j p_app "$JIRO" p_paid_on 2026-11-30 p_expected_payable '=300000')" | code)" "P0403"
-ok "1次（A社）は退職を記録できない"          "$(rpc "$A" v2_reward_record_resignation "$(j p_app "$JIRO" p_resigned_on 2026-11-22)" | code)" "P0403"
-ok "1次（A社）は返金済みにできない"          "$(rpc "$A" v2_reward_mark_refunded "$(j p_app "$JIRO" p_refunded_on 2026-11-30)" | code)" "P0403"
-ok "1次（A社）は支払済みを取り消せない"      "$(rpc "$A" v2_reward_unmark_paid "$(j p_app "$JIRO")" | code)" "P0403"
-ok "未ログインでは支払済みの関数を呼べない"  "$(curl -s -X POST "$BASE/rest/v1/rpc/v2_reward_mark_paid" -H "apikey: $AK" -H 'Content-Type: application/json' -d "$(j p_app "$JIRO" p_paid_on 2026-11-30 p_expected_payable '=300000')" | code)" "42501"
-ok "未ログインでは退職の関数を呼べない"      "$(curl -s -X POST "$BASE/rest/v1/rpc/v2_reward_record_resignation" -H "apikey: $AK" -H 'Content-Type: application/json' -d "$(j p_app "$JIRO" p_resigned_on 2026-11-22)" | code)" "42501"
+KRID=$(one "select id from v2_rewards where $KW")
+KRV=$(one "select version from v2_rewards where $KW")
+ok "1次（A社）は支払済みにできない"          "$(rpc "$A" v2_reward_mark_paid "$(j p_reward "$KRID" p_version "=$KRV" p_paid_on 2026-11-30 p_expected_payable '=300000')" | code)" "P0403"
+ok "1次（A社のCA）は支払済みにできない"      "$(rpc "$AC" v2_reward_mark_paid "$(j p_reward "$KRID" p_version "=$KRV" p_paid_on 2026-11-30 p_expected_payable '=300000')" | code)" "P0403"
+ok "2次（B社）は支払済みにできない"          "$(rpc "$B" v2_reward_mark_paid "$(j p_reward "$KRID" p_version "=$KRV" p_paid_on 2026-11-30 p_expected_payable '=300000')" | code)" "P0403"
+ok "1次（A社）は退職を記録できない"          "$(rpc "$A" v2_reward_record_resignation "$(j p_reward "$KRID" p_version "=$KRV" p_resigned_on 2026-11-22)" | code)" "P0403"
+ok "1次（A社）は返金済みにできない"          "$(rpc "$A" v2_reward_mark_refunded "$(j p_reward "$KRID" p_version "=$KRV" p_refunded_on 2026-11-30)" | code)" "P0403"
+ok "1次（A社）は支払済みを取り消せない"      "$(rpc "$A" v2_reward_unmark_paid "$(j p_reward "$KRID" p_version "=$KRV")" | code)" "P0403"
+ok "未ログインでは支払済みの関数を呼べない"  "$(curl -s -X POST "$BASE/rest/v1/rpc/v2_reward_mark_paid" -H "apikey: $AK" -H 'Content-Type: application/json' -d "$(j p_reward "$KRID" p_version "=$KRV" p_paid_on 2026-11-30 p_expected_payable '=300000')" | code)" "42501"
+ok "未ログインでは退職の関数を呼べない"      "$(curl -s -X POST "$BASE/rest/v1/rpc/v2_reward_record_resignation" -H "apikey: $AK" -H 'Content-Type: application/json' -d "$(j p_reward "$KRID" p_version "=$KRV" p_resigned_on 2026-11-22)" | code)" "42501"
 ok "報酬の表を直接書き換えられない（更新）"  "$(curl -s -X PATCH "$BASE/rest/v1/v2_rewards?application_id=eq.$JIRO" -H "apikey: $AK" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d "$(j pay_status paid paid_on 2026-11-30)" | code)" "42501"
 ok "報酬の表に直接行を作れない"              "$(curl -s -X POST "$BASE/rest/v1/v2_rewards" -H "apikey: $AK" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d "$(j application_id "$JIRO" fee_amount '=1')" | code)" "42501"
 ok "書き換えの試みの後も報酬は変わらない"    "$(rew)" "pending|300000|2026-11-02|"
@@ -225,7 +233,7 @@ echo "== 退職の計算と、支払前の退職＝支払額から差し引き�
 ok "支払前・20日後の退職 → 100%・差し引き300000円・支払なし（返金の手続きなし）" "$(resign "'2026-11-22'::date" | first)" "100|300000||deduct|cancelled"
 ok "支払前・ちょうど1か月後の退職 → 100%・支払なし" "$(resign "'2026-12-02'::date" | first)" "100|300000||deduct|cancelled"
 ok "支払なしは支払済みにできない（P0409）"    "$(paid 2026-11-30 | errc)" "P0409"
-ok "支払なしは返金済みにできない（P0409）"    "$(ra "select v2_reward_mark_refunded('$JIRO', '2026-12-10')" | errc)" "P0409"
+ok "支払なしは返金済みにできない（P0409）"    "$(ra "select v2_reward_mark_refunded($KR, $KV, '2026-12-10')" | errc)" "P0409"
 ok "支払前・1か月と1日後の退職 → 50%・差し引き・支払待ちに戻る" "$(resign "'2026-12-03'::date" | first)" "50|150000||deduct|pending"
 ok "支払前・2か月後の退職 → 50%・差し引き150000円・支払待ち" "$(resign "'2027-01-02'::date" | first)" "50|150000||deduct|pending"
 ok "支払額（税抜）は 300000 − 150000 = 150000" "$(payable)" "150000|pending|deduct"
@@ -238,7 +246,7 @@ ok "RA: 支払なしから退職の記録を消すと支払待ちに戻る" "$(r
 ok "差し引きも消え、全額の支払待ちに戻る"     "$(payable)" "300000|pending|"
 ok "RA: 支払前に2か月後の退職を記録（差し引き150000円）" "$(resign "'2027-01-02'::date" | first)" "50|150000||deduct|pending"
 ok "差し引き: 退職日より前の支払日は拒否される（P0400）" "$(paid 2026-11-30 | errc)" "P0400"
-ok "表示と違う支払額（300000）では支払済みにできない（P0409）" "$(ra "select v2_reward_mark_paid('$JIRO', '2027-01-10', 300000)" | errc)" "P0409"
+ok "表示と違う支払額（300000）では支払済みにできない（P0409）" "$(ra "select v2_reward_mark_paid($KR, $KV, '2027-01-10', 300000)" | errc)" "P0409"
 ok "RA: 差し引き後の額で支払済みにする（退職日のあと）" "$(paid 2027-01-10 | errc)" "none"
 ok "支払済み（差し引き後の支払額 150000）"    "$(payable)" "150000|paid|deduct"
 ok "実際に支払った額 150000 が記録される"     "$(paidamt)" "paid|2027-01-10|150000"
@@ -246,22 +254,24 @@ ok "差し引き後の額で支払済みのあとは、退職の記録を消せ�
 ok "差し引き後の額で支払済みのあとは、退職日を変えられない（P0409）" "$(resign "'2027-03-02'::date" | errc)" "P0409"
 ok "拒否の後も差し引きと支払済みは変わらない" "$(payable)" "150000|paid|deduct"
 ok "拒否の後も支払った額の記録は変わらない"   "$(paidamt)" "paid|2027-01-10|150000"
-ok "RA: 差し引きのまま支払済みを取り消せる"   "$(ra "select v2_reward_unmark_paid('$JIRO')" | errc)" "none"
+ok "RA: 差し引きのまま支払済みを取り消せる"   "$(ra "select v2_reward_unmark_paid($KR, $KV)" | errc)" "none"
 ok "支払待ちに戻り、差し引きは残る"           "$(payable)" "150000|pending|deduct"
 ok "取り消すと支払日と支払った額も消える"     "$(paidamt)" "pending||"
 ok "RA: 支払前に退職の記録を消す"             "$(resign "null::date" | first)" "||||pending"
-ok "退職の記録を消すと返金・差し引きの記録も消える" "$(one "select format('%s|%s|%s|%s|%s', resigned_on, refund_rate, refund_amount, refund_status, refund_mode) from v2_rewards where application_id='$JIRO'")" "||||"
+ok "退職の記録を消すと返金・差し引きの記録も消える" "$(one "select format('%s|%s|%s|%s|%s', resigned_on, refund_rate, refund_amount, refund_status, refund_mode) from v2_rewards where $KW")" "||||"
 ok "返金・差し引き額が紹介料を超える行は作れない（119の制約）" \
-  "$(sql "update v2_rewards set resigned_on=joined_on, refund_rate=100, refund_amount=fee_amount+1, refund_mode='refund', version=version where application_id='$JIRO'" | errc)" "23514"
+  "$(sql "update v2_rewards set resigned_on=joined_on, refund_rate=100, refund_amount=fee_amount+1, refund_mode='refund', version=version where $KW" | errc)" "23514"
 ok "支払額が0円でないのに「支払なし」にはできない（制約）" \
-  "$(sql "update v2_rewards set resigned_on=joined_on, refund_rate=50, refund_amount=150000, refund_mode='deduct', pay_status='cancelled', version=version where application_id='$JIRO'" | errc)" "23514"
+  "$(sql "update v2_rewards set resigned_on=joined_on, refund_rate=50, refund_amount=150000, refund_mode='deduct', pay_status='cancelled', version=version where $KW" | errc)" "23514"
 ok "支払済みなのに支払った額が空の行は作れない（制約）" \
-  "$(sql "update v2_rewards set pay_status='paid', paid_on='2026-11-30', version=version where application_id='$JIRO'" | errc)" "23514"
+  "$(sql "update v2_rewards set pay_status='paid', paid_on='2026-11-30', version=version where $KW" | errc)" "23514"
 ok "制約で拒否された後も報酬は元のまま"       "$(rew)" "pending|300000|2026-11-02|"
 
 echo "== 支払済みの後は入社を取り消せない =="
 ok "支払日が入社日より前は拒否される（P0400）" "$(paid 2026-11-01 | errc)" "P0400"
 ok "RA: 支払済みにする"                        "$(paid 2026-11-30 | errc)" "none"
+ok "古い version では支払済みを取り消せない（121・P0409）" "$(ra "select v2_reward_unmark_paid($KR, $KV - 1)" | errc)" "P0409"
+ok "古い version の拒否の後も支払済みのまま"     "$(paidamt)" "paid|2026-11-30|300000"
 ok "実際に支払った額 300000 が記録される"     "$(paidamt)" "paid|2026-11-30|300000"
 ok "報酬は支払済み"                            "$(rew)" "paid|300000|2026-11-02|2026-11-30"
 ok "支払済みの後は入社日（最後の段階の実施日）を直せない（P0409）" "$(ms "$LAST" 2026-11-05 passed | errc)" "P0409"
@@ -271,27 +281,27 @@ ok "支払済みの後、入社を未定に戻せない（P0409）" "$(ms "$LAST
 ok "支払済みの後、別の段階を不通過にできない（P0409）" "$(ms 2 2026-10-22 failed | errc)" "P0409"
 ok "拒否の後も報酬は変わらない"                "$(rew)" "paid|300000|2026-11-02|2026-11-30"
 ok "拒否の後も選考は終了・通過のまま、段階も通過のまま" "$(one "select a.stage||'|'||a.result||'|'||m.result||'|'||(select result from v2_milestones where application_id=a.id and seq=2) from v2_applications a join v2_milestones m on m.application_id=a.id and m.seq=$LAST where a.id='$JIRO'")" "closed|passed|passed|passed"
-ok "RA: 支払済みを取り消せる（返金の記録なし）" "$(ra "select v2_reward_unmark_paid('$JIRO')" | errc)" "none"
+ok "RA: 支払済みを取り消せる（返金の記録なし）" "$(ra "select v2_reward_unmark_paid($KR, $KV)" | errc)" "none"
 ok "支払待ちに戻る"                            "$(rew)" "pending|300000|2026-11-02|"
 ok "RA: もう一度支払済みにする"                "$(paid 2026-11-30 | errc)" "none"
 
 echo "== 返金 =="
 ok "RA: 支払済みのあとに4か月後の退職を記録 → 返金の扱い・返金0円" "$(resign "'2027-03-02'::date" | first)" "0|0||refund|paid"
-ok "RA: 返金0円なら支払済みを取り消せる"       "$(ra "select v2_reward_unmark_paid('$JIRO')" | errc)" "none"
+ok "RA: 返金0円なら支払済みを取り消せる"       "$(ra "select v2_reward_unmark_paid($KR, $KV)" | errc)" "none"
 ok "取り消すと「支払前の退職＝差し引き」の扱いにそろう（支払待ち・支払った額なし）" \
-  "$(one "select format('%s|%s|%s|%s|%s', refund_mode, refund_status, pay_status, paid_amount, refund_amount) from v2_rewards where application_id='$JIRO'")" "deduct||pending||0"
+  "$(one "select format('%s|%s|%s|%s|%s', refund_mode, refund_status, pay_status, paid_amount, refund_amount) from v2_rewards where $KW")" "deduct||pending||0"
 ok "RA: 退職の記録を消す"                      "$(resign "null::date" | first)" "||||pending"
 ok "RA: もう一度支払済みにする（返金の確認用）" "$(paid 2026-11-30 | errc)" "none"
 ok "RA: 支払済みのあとに20日後の退職を記録 → 返金の扱い（返金待ち）" "$(resign "'2026-11-22'::date" | first)" "100|300000|pending|refund|paid"
 ok "返金の扱いでは支払額は変わらない（支払済み 300000）" "$(payable)" "300000|paid|refund"
-ok "返金待ちの間は支払済みを取り消せない"      "$(ra "select v2_reward_unmark_paid('$JIRO')" | errc)" "P0409"
-ok "返金日が支払日より前は拒否される（P0400）" "$(ra "select v2_reward_mark_refunded('$JIRO', '2026-11-29')" | errc)" "P0400"
-ok "RA: 返金済みにする"                        "$(ra "select v2_reward_mark_refunded('$JIRO', '2026-12-10')" | errc)" "none"
-ok "返金済み・返金日が記録される"              "$(one "select format('%s|%s', refund_status, refunded_on) from v2_rewards where application_id='$JIRO'")" "refunded|2026-12-10"
+ok "返金待ちの間は支払済みを取り消せない"      "$(ra "select v2_reward_unmark_paid($KR, $KV)" | errc)" "P0409"
+ok "返金日が支払日より前は拒否される（P0400）" "$(ra "select v2_reward_mark_refunded($KR, $KV, '2026-11-29')" | errc)" "P0400"
+ok "RA: 返金済みにする"                        "$(ra "select v2_reward_mark_refunded($KR, $KV, '2026-12-10')" | errc)" "none"
+ok "返金済み・返金日が記録される"              "$(one "select format('%s|%s', refund_status, refunded_on) from v2_rewards where $KW")" "refunded|2026-12-10"
 ok "返金済みの後は退職の記録を消せない"        "$(resign "null::date" | errc)" "P0409"
 ok "返金済みの後は退職日を変えられない"        "$(resign "'2027-03-02'::date" | errc)" "P0409"
-ok "返金済みの後は支払済みを取り消せない"      "$(ra "select v2_reward_unmark_paid('$JIRO')" | errc)" "P0409"
-ok "1次（A社）から返金済みの記録が見える"      "$(get "$A" "v2_rewards?select=refund_status,refund_amount&application_id=eq.$JIRO" | python3 -c 'import json,sys;d=json.load(sys.stdin);print("%s|%s" % (d[0]["refund_status"], d[0]["refund_amount"]) if isinstance(d,list) and d else "ERR")')" "refunded|300000"
+ok "返金済みの後は支払済みを取り消せない"      "$(ra "select v2_reward_unmark_paid($KR, $KV)" | errc)" "P0409"
+ok "1次（A社）から返金済みの記録が見える"      "$(get "$A" "v2_rewards?select=refund_status,refund_amount&application_id=eq.$JIRO&payer_company_id=is.null" | python3 -c 'import json,sys;d=json.load(sys.stdin);print("%s|%s" % (d[0]["refund_status"], d[0]["refund_amount"]) if isinstance(d,list) and d else "ERR")')" "refunded|300000"
 
 if [ "${CLEAN_REWARD:-}" != "1" ]; then
   # 画面で試せるように、次郎を「入社済み・支払待ち・退職なし」にして残す（次に流すときは最初に戻す）
@@ -301,7 +311,9 @@ if [ "${CLEAN_REWARD:-}" != "1" ]; then
   ok "RA: 内定を通過（画面確認用）"     "$(ms 4 2026-10-28 passed | errc)" "none"
   ok "RA: 入社を通過（画面確認用）"     "$(ms "$LAST" 2026-11-02 passed | errc)" "none"
   ok "画面確認用: 次郎の報酬は A99999 宛て・支払待ち・退職なしで残した" \
-    "$(one "select format('%s|%s|%s|%s|%s|%s', co.code, r.joined_on, r.fee_amount, r.pay_status, r.resigned_on, r.paid_amount) from v2_rewards r join v2_companies co on co.id=r.payee_company_id where r.application_id='$JIRO'")" "A99999|2026-11-02|300000|pending||"
+    "$(one "select format('%s|%s|%s|%s|%s|%s', co.code, r.joined_on, r.fee_amount, r.pay_status, r.resigned_on, r.paid_amount) from v2_rewards r join v2_companies co on co.id=r.payee_company_id where r.application_id='$JIRO' and r.payer_company_id is null")" "A99999|2026-11-02|300000|pending||"
+  ok "画面確認用: A99999→B00001 の報酬（フロント向けの額 160000）も支払待ちで残した" \
+    "$(one "select format('%s>%s|%s|%s|%s', pr.code, pe.code, r.fee_amount, r.pay_status, r.resigned_on) from v2_rewards r join v2_companies pe on pe.id=r.payee_company_id join v2_companies pr on pr.id=r.payer_company_id where r.application_id='$JIRO'")" "A99999>B00001|160000|pending|"
 else
   ok "後片付け（CLEAN_REWARD=1）: 次郎の選考を最初の状態に戻した" "$(reset_jiro)" "[]"
 fi

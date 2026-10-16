@@ -1,5 +1,5 @@
-// パートナー管理（CA）: 自社のCA／フロント企業と招待／フロントへの求人の提示
-// 変更できるのは会社の代表者だけ（それ以外のCAは見るだけ）
+// パートナー管理（CA）: 自社のCA／フロント企業と招待／フロントへの求人の提示／フロントへの支払い（設計書14.1）
+// 変更できるのは会社の代表者だけ（それ以外のCAは見るだけ。フロントへの支払いの記録はDBも代表者だけに許す）
 import { register } from '../../router.js';
 import { sb, callFn } from '../../supabase.js';
 import { S } from '../../store.js';
@@ -8,6 +8,8 @@ import { openModal, showError, toast, busy } from '../../ui/components.js';
 import { userError, updateRow } from '../../ui/db.js';
 import { tierLabel } from '../../config.js';
 import { parseYen } from '../../ui/money.js';
+import { rewardSums, rewardTableHtml, payeeCell } from '../../ui/reward-rows.js';
+import { bindRewardActions, loadRewardRows, today } from '../../ui/reward-actions.js';
 import { issueInviteModal, inviteRows, bindInviteRows, resetMemberPassword, setMemberStatus } from '../../ui/invites.js';
 
 function addMemberModal(onDone) {
@@ -50,6 +52,8 @@ async function render(el) {
   ]);
   const err = e1 || e2 || e3 || e4 || e5;
   if (err) throw userError(err, 'パートナー管理を読み込めませんでした');
+  // フロントへの支払い（自社が支払う報酬の行。1000件ずつ全部）
+  const pays = await loadRewardRows((q) => q.eq('payer_company_id', me));
   // フロントの代表者（連絡先）
   let reps = {};
   if (fronts.length) {
@@ -58,6 +62,7 @@ async function render(el) {
     reps = Object.fromEntries(r.map((x) => [x.company_id, x]));
   }
   const offerOf = (jid) => offers.find((o) => o.job_id === jid);
+  const paySum = rewardSums(pays, today().slice(0, 7));
 
   el.innerHTML = `
     ${owner ? '' : '<p class="callout">変更できるのは会社の代表者だけです。ここでは内容を確認できます。</p>'}
@@ -94,7 +99,7 @@ async function render(el) {
 
     <section class="card">
       <h2>フロントへの求人の提示</h2>
-      <p class="hint">あなたの会社に提示されている求人を、フロント企業にも見せるかどうかと、フロントに表示する紹介料を決めます。フロントには、ここで入力した額だけが表示されます（実際の支払いはアプリの外での取り決めです）。</p>
+      <p class="hint">あなたの会社に提示されている求人を、フロント企業にも見せるかどうかと、フロントに表示する紹介料を決めます。フロントには、ここで入力した額だけが表示されます。フロントの求職者が入社すると、その時点の額が下の「フロントへの支払い」に記録されます。</p>
       ${jobs.length ? `<div class="table-wrap"><table class="table offer-table">
         <thead><tr><th>求人</th><th>あなたへの紹介料</th><th>フロントに公開</th><th>フロントに表示する紹介料（円）</th>${owner ? '<th></th>' : ''}</tr></thead>
         <tbody>${jobs.map((j) => { const o = offerOf(j.id); return `<tr data-job="${esc(j.id)}">
@@ -104,6 +109,17 @@ async function render(el) {
           <td>${owner ? `<input type="number" name="fee" min="0" step="1" inputmode="numeric" value="${o?.fee_display ?? ''}" aria-label="${esc(j.title)}のフロント向け紹介料">` : (o?.published ? fmtYen(o.fee_display) : '—')}</td>
           ${owner ? '<td><button class="btn btn-sm" data-save-offer>保存</button></td>' : ''}
         </tr>`; }).join('')}</tbody></table></div>` : '<div class="empty">あなたの会社に提示されている求人はまだありません。</div>'}
+    </section>
+
+    <section class="card">
+      <h2>フロントへの支払い <small class="sub">あなたの会社からフロント企業への紹介料（成約報酬）</small></h2>
+      <p class="hint">フロントの求職者が入社すると、ここに並びます。額は入社が確定した時点の「フロントに表示する紹介料」、返金規定はKANOAが求人ごとに決めた規定で固定されます。支払済み・退職・返金済みは${owner ? 'ここで記録してください（フロントの報酬の画面に表示されます）' : '代表者が記録します'}。支払前に退職した場合は、返金ではなく支払額から差し引きます（全額を差し引くと「支払なし」）。</p>
+      ${pays.length ? `<div class="stat-grid">
+        <div class="stat"><div class="label">支払待ち 合計（税込）</div><div class="num">${fmtYen(paySum.payWait)}</div></div>
+        <div class="stat"><div class="label">返金待ち 合計（税込）</div><div class="num">${fmtYen(paySum.refundWait)}</div></div>
+        <div class="stat"><div class="label">今月の支払済み（税込）</div><div class="num">${fmtYen(paySum.paidMonth)}</div></div>
+      </div>${rewardTableHtml(pays, { party: { label: '支払先', cell: payeeCell }, canAct: owner })}`
+      : '<div class="empty">フロントへの支払いはまだありません。</div>'}
     </section>`;
 
   const reload = () => render(el);
@@ -111,6 +127,7 @@ async function render(el) {
   el.querySelector('#invite')?.addEventListener('click', () => issueInviteModal({
     title: 'フロント企業を招待', hint: `招待した会社は${tierLabel(S.company.tier + 1)}（あなたの会社の1つ下）として登録されます。`, onDone: reload }));
   bindInviteRows(el, invs, reload);
+  if (owner) bindRewardActions(el, pays, () => reload().catch((e) => showError(e, 'パートナー管理の表示')));
   el.querySelectorAll('[data-reset]').forEach((b) => { b.onclick = () => resetMemberPassword(members.find((m) => m.id === b.dataset.reset)); });
   el.querySelectorAll('[data-status]').forEach((b) => {
     const m = members.find((x) => x.id === b.dataset.status);

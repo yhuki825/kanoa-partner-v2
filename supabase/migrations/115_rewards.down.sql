@@ -1,5 +1,9 @@
--- 115_rewards.sql と、それを直した 116〜119（116_rewards_fixes / 117_rewards_fixes2 / 118_reward_deduction / 119_reward_paid_amount）を元に戻す
--- （報酬・返金規定のデータも消える。118・119 で足した列・制約は報酬の表と一緒に消え、関数は下で消す）
+-- 115_rewards.sql と、それを直した 116〜120（116_rewards_fixes / 117_rewards_fixes2 / 118_reward_deduction / 119_reward_paid_amount /
+-- 120_multilevel_rewards / 121_reward_review_fixes）を元に戻す
+-- （報酬・返金規定のデータも消える。118〜120 で足した列・制約・RLSは報酬の表と一緒に消え、関数は下で消す）
+-- ※ 120 で関数の引数名を p_app → p_reward に変えたが、型は同じなので下の drop で両方の版が消える。121 で足した p_version 付きの版も下で消す
+-- ※ 121 で v2_milestone_save の実行権限から public・anon を外した（未ログインで呼べないようにする守り）。下の本体の置き換えでは権限は変わらず、
+--    外したままにする（115 より前の「anon も呼べる」状態には戻さない。戻す必要があれば grant execute … to anon を別に流す）
 -- ※ 116/117 が自動で入れた「最後の段階の実施日」（v2_milestones.done_on）はデータとして残り、戻らない
 -- ※ begin/commit は書いていない。適用するときはトランザクションの中で流すこと
 -- 1) v2_milestone_save を 115 適用前の本体に戻す（2026-10-16 にDBから読んだ本体そのまま。prosrc の md5 = 89ae6e5da71f90df5474bf9b10f97d92）
@@ -46,7 +50,10 @@ alter table v2_job_kanoa_fees drop constraint if exists v2_job_kanoa_fees_fee_wh
 alter table v2_job_shares     drop constraint if exists v2_job_shares_fee_override_whole;
 alter table v2_job_offers     drop constraint if exists v2_job_offers_fee_display_whole;
 
--- 3) 115〜119 で足した関数と表を消す
+-- 3) 115〜121 で足した関数と表を消す
+drop function if exists v2_reward_make_chain(uuid), v2_rewards_assert_open(uuid, boolean), v2_my_upline();
+drop function if exists v2_reward_mark_paid(uuid, int, date, numeric), v2_reward_unmark_paid(uuid, int),
+  v2_reward_record_resignation(uuid, int, date), v2_reward_mark_refunded(uuid, int, date), v2_reward_lock(uuid, int);
 drop function if exists v2_job_refund_policy_save(uuid, jsonb), v2_job_refund_policy_save(uuid, jsonb, int), v2_reward_mark_paid(uuid, date),
   v2_reward_mark_paid(uuid, date, numeric), v2_reward_payable(v2_rewards), v2_reward_unmark_paid(uuid),
   v2_reward_record_resignation(uuid, date), v2_reward_mark_refunded(uuid, date), v2_reward_lock(uuid),
