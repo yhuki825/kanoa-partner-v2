@@ -224,3 +224,23 @@ dd.url { word-break: break-all; }
 .sel-chat .composer .btn:first-child { padding: 6px 8px; font-size: 16px; }
 .older { align-self: center; }
 @media (max-width: 960px) { .sel-chat { height: 70dvh; } }
+
+/* ---- 第5段階: パートナー管理・CA一覧・各種資料 ---- */
+.card-head { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-bottom: 10px; flex-wrap: wrap; }
+.card-head h2 { margin: 0; }
+.row-actions { white-space: nowrap; display: flex; gap: 4px; justify-content: flex-end; }
+.invite-text { width: 100%; font-family: var(--font-mono); font-size: 12.5px; padding: 10px; border: 1px solid var(--c-border); border-radius: 8px; background: #fafafb; }
+.offer-table input[type="number"] { width: 140px; padding: 6px 8px; border: 1px solid var(--c-border); border-radius: 6px; }
+.tree { list-style: none; padding-left: 22px; border-left: 1px dashed var(--c-border); margin-left: 8px; }
+.tree.root { padding-left: 0; border-left: none; margin-left: 0; }
+.tree-node { margin: 6px 0; }
+.tree-node > details > summary { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border: 1px solid var(--c-border); border-radius: 8px; cursor: pointer; list-style: none; flex-wrap: wrap; }
+.tree-node > details > summary::-webkit-details-marker { display: none; }
+.tree-node > details[open] > summary { background: var(--c-primary-soft); }
+.tag.tier { background: var(--c-primary); color: #fff; }
+.tree-members { margin: 6px 0 4px 12px; width: calc(100% - 12px); }
+.res-list { list-style: none; }
+.res-item { display: flex; align-items: flex-start; gap: 10px; padding: 10px 0; border-top: 1px solid var(--c-border); }
+.res-item:first-child { border-top: none; }
+.res-main { flex: 1; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
+.res-main .pre { flex-basis: 100%; }

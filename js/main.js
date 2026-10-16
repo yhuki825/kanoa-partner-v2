@@ -16,6 +16,9 @@ import './features/jobs/jobs.js';
 import './features/jobs/detail.js';
 import { refreshWaitingBadge } from './features/selections/list.js';
 import './features/selections/detail.js';
+import './features/resources/resources.js';
+import './features/partners/partners.js';
+import './features/ca-list/ca-list.js';
 import './features/upcoming/upcoming.js';
 import './features/account/account.js';
 

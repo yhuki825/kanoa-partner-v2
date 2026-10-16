@@ -29,7 +29,7 @@ ok "3アカウントでログインできる" "$([ -n "$A" ] && [ -n "$C" ] && [
 
 ok "A社: 自社と自分のフロントだけ見える"   "$(get "$A" 'v2_companies?select=code' | codes code)" "A99999,B00001"
 ok "B社: 自社だけ見える（アップは見えない）" "$(get "$B" 'v2_companies?select=code' | codes code)" "B00001"
-ok "A社: 自社メンバー＋フロントの代表者"   "$(get "$A" 'v2_members?select=login_id' | codes login_id)" "A99999-01,A99999-02,B00001-01"
+ok "A社: 他社のメンバーはフロントの代表者だけ見える" "$(get "$A" 'v2_members?select=login_id,is_owner,company:v2_companies!v2_members_company_id_fkey(code)' | python3 -c 'import json,sys;d=json.load(sys.stdin);o=[x for x in d if x["company"]["code"]!="A99999"];print("OK" if o and all(x["is_owner"] for x in o) and any(x["login_id"]=="B00001-01" for x in o) else "NG:"+",".join(x["login_id"] for x in o))')" "OK"
 ok "B社: 自社メンバーだけ"                 "$(get "$B" 'v2_members?select=login_id' | codes login_id)" "B00001-01"
 ok "未ログイン: 会社は何も見えない"         "$(curl -s "$BASE/rest/v1/v2_companies?select=code" -H "apikey: $AK")" "[]"
 

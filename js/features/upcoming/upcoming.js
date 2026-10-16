@@ -6,12 +6,6 @@ import { esc } from '../../ui/format.js';
 
 const ra = () => S.role === 'ra';
 const PAGES = [
-  { path: 'resources', icon: 'folder', order: 40, title: '各種資料', phase: 5,
-    what: () => ra() ? '資料の登録・並べ替え・公開' : '履歴書の雛形・記入見本などの閲覧とダウンロード' },
-  { path: 'partners', icon: 'network', order: 50, title: 'パートナー管理', phase: 5, roles: ['ca'],
-    what: () => '自社のCAの追加、フロントの招待、フロント向けの紹介料の設定（代表者のみ）' },
-  { path: 'ca-list', icon: 'network', order: 50, title: 'CA一覧', phase: 5, roles: ['ra'],
-    what: () => '全パートナーのツリー（A→B→C…）と各社のCA、1次パートナーの招待' },
   { path: 'rewards', icon: 'yen', order: 60, title: '報酬', phase: 5, roles: ['ra'],
     what: () => '1次パートナーの請求の承認・支払、支払ステータス、早期退職・返金' },
 ];

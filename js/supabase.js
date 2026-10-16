@@ -22,6 +22,8 @@ const FN_ERRORS = {
   weak_password: '新しいパスワードは8文字以上にしてください。',
   company_name_required: '会社名を入力してください。',
   name_required: '名前を入力してください。',
+  use_account_page: '自分のパスワードは「アカウント」画面から変更してください。',
+  tier_limit: 'これ以上深い階層は作れません。',
 };
 
 // Edge Function 呼び出し（ログイン中ならトークンを付ける）
