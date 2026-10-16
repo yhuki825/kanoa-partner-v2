@@ -63,6 +63,8 @@ async function render(el) {
   }
   const offerOf = (jid) => offers.find((o) => o.job_id === jid);
   const paySum = rewardSums(pays, today().slice(0, 7));
+  // 紹介料が未設定（0円）のまま入社が確定した行（支払う側が額を入れるまで、フロントには「紹介料 未設定」と見える）
+  const noFeeCount = pays.filter((r) => !Number(r.fee_amount) && r.pay_status !== 'paid' && !r.refund_status).length;
 
   el.innerHTML = `
     ${owner ? '' : '<p class="callout">変更できるのは会社の代表者だけです。ここでは内容を確認できます。</p>'}
@@ -99,7 +101,7 @@ async function render(el) {
 
     <section class="card">
       <h2>フロントへの求人の提示</h2>
-      <p class="hint">あなたの会社に提示されている求人を、フロント企業にも見せるかどうかと、フロントに表示する紹介料を決めます。フロントには、ここで入力した額だけが表示されます。フロントの求職者が入社すると、その時点の額が下の「フロントへの支払い」に記録されます。</p>
+      <p class="hint">あなたの会社に提示されている求人を、フロント企業にも見せるかどうかと、フロントに表示する紹介料を決めます。フロントには、ここで入力した額だけが表示されます。フロントの求職者が入社すると、その時点の額が下の「フロントへの支払い」に記録されます（額が未入力の求人は「紹介料 未設定」で記録され、あとから入れられます）。</p>
       ${jobs.length ? `<div class="table-wrap"><table class="table offer-table">
         <thead><tr><th>求人</th><th>あなたへの紹介料</th><th>フロントに公開</th><th>フロントに表示する紹介料（円）</th>${owner ? '<th></th>' : ''}</tr></thead>
         <tbody>${jobs.map((j) => { const o = offerOf(j.id); return `<tr data-job="${esc(j.id)}">
@@ -114,6 +116,8 @@ async function render(el) {
     <section class="card">
       <h2>フロントへの支払い <small class="sub">あなたの会社からフロント企業への紹介料（成約報酬）</small></h2>
       <p class="hint">フロントの求職者が入社すると、ここに並びます。額は入社が確定した時点の「フロントに表示する紹介料」、返金規定はKANOAが求人ごとに決めた規定で固定されます。支払済み・退職・返金済みは${owner ? 'ここで記録してください（フロントの報酬の画面に表示されます）' : '代表者が記録します'}。支払前に退職した場合は、返金ではなく支払額から差し引きます（全額を差し引くと「支払なし」）。</p>
+      ${noFeeCount ? `<p class="callout warn">紹介料が未設定のフロントへの支払いが<b>${noFeeCount}件</b>あります。${owner
+        ? '表の「紹介料を入れる」から額（税抜）を入れてください。フロントの報酬の画面にも反映されます。' : '代表者が額を入れます。'}</p>` : ''}
       ${pays.length ? `<div class="stat-grid">
         <div class="stat"><div class="label">支払待ち 合計（税込）</div><div class="num">${fmtYen(paySum.payWait)}</div></div>
         <div class="stat"><div class="label">返金待ち 合計（税込）</div><div class="num">${fmtYen(paySum.refundWait)}</div></div>

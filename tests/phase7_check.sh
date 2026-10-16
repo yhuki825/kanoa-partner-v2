@@ -122,8 +122,8 @@ ok "A99999→B00001 の額は入社後にフロント向けの額を変えても
   "$(sql "begin; update v2_job_offers set fee_display=1, version=version where job_id='$JOB' and company_id='$ACO'; select fee_amount::text r from v2_rewards where $FW; rollback;" | first)" "160000"
 ok "額は入社確定の時点のもの: 表示額 170000 にしてから入社し直すと 170000（変更は取り消す）" \
   "$(sql "begin; update v2_job_offers set fee_display=170000, version=version where job_id='$JOB' and company_id='$ACO'; $SET_RA; $MS_UNJOIN; $MS_REJOIN; $CHAIN; rollback;" | first)" "KANOA>A99999|300000,A99999>B00001|170000"
-ok "フロント向けの額が無い段は行を作らない（額を作り出さない。変更は取り消す）" \
-  "$(sql "begin; delete from v2_job_offers where job_id='$JOB' and company_id='$ACO'; $SET_RA; $MS_UNJOIN; $MS_REJOIN; $CHAIN; rollback;" | first)" "KANOA>A99999|300000"
+ok "フロント向けの額が無い段は0円（紹介料 未設定）で作る（122。額を作り出さない。変更は取り消す）" \
+  "$(sql "begin; delete from v2_job_offers where job_id='$JOB' and company_id='$ACO'; $SET_RA; $MS_UNJOIN; $MS_REJOIN; $CHAIN; rollback;" | first)" "KANOA>A99999|300000,A99999>B00001|0"
 ok "公開を止めていても、設定された額で作る（変更は取り消す）" \
   "$(sql "begin; update v2_job_offers set published=false, version=version where job_id='$JOB' and company_id='$ACO'; $SET_RA; $MS_UNJOIN; $MS_REJOIN; $CHAIN; rollback;" | first)" "KANOA>A99999|300000,A99999>B00001|160000"
 ok "取り消した後も次郎の報酬は2段のまま"      "$(one "$CHAIN")" "KANOA>A99999|300000,A99999>B00001|160000"
@@ -267,7 +267,7 @@ NODE_A=$(node --input-type=module -e "
 import { actionsOf } from './js/ui/reward-rows.js';
 const k = (r) => actionsOf(r).map((a) => a[0]).join('+');
 console.log(k({ pay_status: 'pending', fee_amount: '0' }) + '/' + k({ pay_status: 'pending', fee_amount: '160000' }));" 2>&1)
-ok "a) 画面: 0円の行には「支払済みにする」が出ない（対照: 160000 の行には出る）" "$NODE_A" "resign/paid+resign"
+ok "a) 画面: 0円の行には「支払済みにする」が出ず「紹介料を入れる」が出る（対照: 160000 の行には支払済みにする）" "$NODE_A" "fee+resign/paid+resign"
 ok "b) 返金の扱いで支払待ちの行は作れない（制約 v2_rewards_refund_paid）" \
   "$(sql "begin; update v2_rewards set resigned_on=joined_on, refund_rate=0, refund_amount=0, refund_mode='refund', refund_status=null, refunded_on=null, version=version where application_id='$JIRO' and payer_company_id is null; rollback;" | cons)" "v2_rewards_refund_paid"
 ok "b) （対照）返金の扱いで支払済みの行は作れる（取り消す）" \

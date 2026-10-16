@@ -54,8 +54,10 @@ function feeCell(r) {
 }
 function payCell(r) {
   if (r.pay_status === 'paid') return `<span class="tag st-done">支払済み</span><br><small class="sub">${fmtDate(r.paid_on)}</small>`;
-  if (r.pay_status === 'cancelled') return `<span class="tag">支払なし</span><br><small class="sub">${noFee(r) ? '紹介料 未設定（0円）' : '全額差し引き'}</small>`;
-  if (payableOf(r) <= 0) return '<span class="tag">支払なし</span><br><small class="sub">紹介料 未設定（0円）</small>';
+  // 紹介料が未設定（0円）: 支払う側が「紹介料を入れる」で額を入れるまで待つ
+  if (noFee(r)) return '<span class="tag st-wait">紹介料 未設定</span><br><small class="sub">支払う側が額を入れると支払待ちになります</small>';
+  if (r.pay_status === 'cancelled') return '<span class="tag">支払なし</span><br><small class="sub">全額差し引き</small>';
+  if (payableOf(r) <= 0) return '<span class="tag">支払なし</span>';
   return '<span class="tag st-wait">支払待ち</span>';
 }
 function refundCell(r) {
@@ -74,6 +76,8 @@ function refundCell(r) {
 // 行に出す操作ボタン [種類, 文言, クラス]
 export function actionsOf(r) {
   const a = [];
+  // 紹介料が未設定（0円）の行: 支払う側が後から額を入れる（DBも0円の行だけ受け付ける）
+  if (noFee(r) && r.pay_status !== 'paid' && !r.refund_status) a.push(['fee', '紹介料を入れる', 'btn-primary']);
   // 支払額が0円（紹介料 未設定）の行は支払済みにしない（DBも P0400 で拒否する）
   if (r.pay_status === 'pending' && payableOf(r) > 0) a.push(['paid', '支払済みにする', 'btn-primary']);
   else if (r.pay_status === 'paid' && !r.refund_status) a.push(['unpaid', '支払済みを取り消す', '']);
