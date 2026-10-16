@@ -7,8 +7,10 @@ export function userError(e, fallback = '保存に失敗しました') {
   if (!e) return new Error(fallback);
   const code = e.code || '';
   let msg;
-  if (code === 'P0409') msg = '他の人が先に更新しました。画面を読み込み直してから、もう一度操作してください。';
+  // P0409: 楽観ロックの衝突（version_conflict）は既定の文言。それ以外（状態が合わない等）は理由（hint）を出す
+  if (code === 'P0409') msg = (e.message !== 'version_conflict' && e.hint) || '他の人が先に更新しました。画面を読み込み直してから、もう一度操作してください。';
   else if (code === 'P0403') msg = e.hint || 'この操作は権限がありません。';
+  else if ((code === 'P0400' || code === 'P0404') && e.hint) msg = e.hint;
   else if (code === '42501') msg = 'この操作は権限がありません。';
   else if (code === '23505') msg = '同じ内容がすでに登録されています。';
   else msg = `${fallback}（${e.message || code || '不明なエラー'}）`;

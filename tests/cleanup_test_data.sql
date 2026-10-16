@@ -7,6 +7,8 @@ create temp table test_companies as
     select id from v2_companies where code in ('A99999','B00001')
     union select c.id from v2_companies c join t on c.parent_id = t.id)
   select id from t;
+-- 報酬（選考を消しても報酬は消えない設定＝116 のため、テスト選考の報酬を先に消す）
+delete from v2_rewards where application_id in (select id from v2_applications where candidate_id in (select id from v2_candidates where owner_company_id in (select id from test_companies)));
 -- 選考（パーティ・経路・段階・チャットは選考と一緒に消える）
 delete from v2_applications where candidate_id in (select id from v2_candidates where owner_company_id in (select id from test_companies));
 delete from v2_candidates where owner_company_id in (select id from test_companies);

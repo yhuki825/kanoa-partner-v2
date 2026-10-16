@@ -7,7 +7,7 @@ import { showError } from './ui/components.js';
 import { logout } from './auth.js';
 import { tierLabel } from './config.js';
 
-const routes = new Map();   // path -> { title, icon, roles, nav, order, render(el, params) }
+const routes = new Map();   // path -> { title, icon, roles, visible, nav, order, render(el, params) }
 export function register(path, def) { routes.set(path, { order: 99, nav: true, ...def }); }
 
 export function navigate(path) { location.hash = '#/' + String(path).replace(/^#?\/?/, ''); }
@@ -17,7 +17,8 @@ function parseHash() {
   return { path: path || 'home', params: Object.fromEntries(new URLSearchParams(query || '')) };
 }
 
-function allowed(def) { return !def.roles || def.roles.includes(S.role); }
+// roles: 見せる役割（'ra'/'ca'）。visible: さらに細かい条件（例: 1次パートナーだけ）。メニューと直接アクセスの両方に効く
+function allowed(def) { return (!def.roles || def.roles.includes(S.role)) && (!def.visible || !!def.visible()); }
 function titleOf(def) { return typeof def.title === 'function' ? def.title() : def.title; }
 
 export function mountApp() {

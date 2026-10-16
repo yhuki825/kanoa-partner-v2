@@ -7,6 +7,7 @@ import { esc, fmtDate, fmtYen } from '../../ui/format.js';
 import { openModal, showError, toast, busy } from '../../ui/components.js';
 import { userError, updateRow } from '../../ui/db.js';
 import { tierLabel } from '../../config.js';
+import { parseYen } from '../../ui/money.js';
 import { issueInviteModal, inviteRows, bindInviteRows, resetMemberPassword, setMemberStatus } from '../../ui/invites.js';
 
 function addMemberModal(onDone) {
@@ -100,7 +101,7 @@ async function render(el) {
           <td><a href="#" data-open="${esc(j.id)}">${esc(j.client?.name || '')}<br><small class="sub">${esc(j.title)}</small></a></td>
           <td class="mono">${j.v2_my_fee == null ? '未設定' : fmtYen(j.v2_my_fee)}</td>
           <td>${owner ? `<input type="checkbox" name="pub" ${o?.published ? 'checked' : ''} aria-label="${esc(j.title)}をフロントに公開">` : (o?.published ? '公開中' : '—')}</td>
-          <td>${owner ? `<input type="number" name="fee" min="0" inputmode="numeric" value="${o?.fee_display ?? ''}" aria-label="${esc(j.title)}のフロント向け紹介料">` : (o?.published ? fmtYen(o.fee_display) : '—')}</td>
+          <td>${owner ? `<input type="number" name="fee" min="0" step="1" inputmode="numeric" value="${o?.fee_display ?? ''}" aria-label="${esc(j.title)}のフロント向け紹介料">` : (o?.published ? fmtYen(o.fee_display) : '—')}</td>
           ${owner ? '<td><button class="btn btn-sm" data-save-offer>保存</button></td>' : ''}
         </tr>`; }).join('')}</tbody></table></div>` : '<div class="empty">あなたの会社に提示されている求人はまだありません。</div>'}
     </section>`;
@@ -120,10 +121,11 @@ async function render(el) {
     b.onclick = () => busy(b, async () => {
       const tr = b.closest('tr'); const jid = tr.dataset.job; const o = offerOf(jid);
       const published = tr.querySelector('[name="pub"]').checked;
-      const feeStr = tr.querySelector('[name="fee"]').value.trim();
       try {
-        if (published && feeStr === '') throw new Error('公開するには、フロントに表示する紹介料を入力してください。');
-        const fee = feeStr === '' ? (o?.fee_display ?? 0) : Number(feeStr);
+        // 入力欄そのものを渡す（全角数字・カンマ入りを「未入力」と取り違えない）
+        const feeIn = parseYen(tr.querySelector('[name="fee"]'), 'フロントに表示する紹介料');
+        if (published && feeIn == null) throw new Error('公開するには、フロントに表示する紹介料を入力してください。');
+        const fee = feeIn ?? (o?.fee_display ?? 0);
         if (o) await updateRow('v2_job_offers', o, { published, fee_display: fee });
         else if (published) {
           const { error } = await sb().from('v2_job_offers').insert({ job_id: jid, company_id: me, fee_display: fee, published });

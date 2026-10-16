@@ -244,3 +244,18 @@ dd.url { word-break: break-all; }
 .res-item:first-child { border-top: none; }
 .res-main { flex: 1; display: flex; flex-wrap: wrap; gap: 4px 8px; align-items: baseline; }
 .res-main .pre { flex-basis: 100%; }
+
+/* ---- 第5段階（後半）: 報酬・返金規定 ---- */
+.reward-table td { vertical-align: top; }
+.reward-table td:first-child { white-space: nowrap; }
+.reward-table .money { display: flex; flex-direction: column; gap: 2px; white-space: nowrap; }
+.reward-acts { display: flex; flex-direction: column; gap: 4px; align-items: stretch; min-width: 132px; }
+.reward-note { margin: 12px 0 0; }
+.refund-rows { display: flex; flex-direction: column; gap: 6px; margin-bottom: 8px; }
+.refund-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13.5px; }
+.refund-row input[type="number"] { width: 90px; padding: 6px 8px; border: 1px solid var(--c-border); border-radius: 6px; background: var(--c-surface); }
+.reward-table th { white-space: nowrap; }
+.reward-table td:nth-child(2) { min-width: 180px; }
+.reward-table td:nth-child(3) { min-width: 140px; }
+.reward-table td:nth-child(4), .reward-table td:nth-child(7) { white-space: nowrap; }
+.reward-table .tag { white-space: nowrap; }

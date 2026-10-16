@@ -19,6 +19,7 @@ import './features/selections/detail.js';
 import './features/resources/resources.js';
 import './features/partners/partners.js';
 import './features/ca-list/ca-list.js';
+import './features/rewards/rewards.js';
 import './features/upcoming/upcoming.js';
 import './features/account/account.js';
 

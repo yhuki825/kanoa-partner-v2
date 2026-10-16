@@ -9,6 +9,23 @@ import { userError, updateRow } from '../../ui/db.js';
 import { fieldLabel } from '../../ui/candidate-fields.js';
 import { ageOf } from '../../ui/format.js';
 import { JOB_STATUS, openJobEditor } from './editor.js';
+import { refundPolicyLines, parseYen } from '../../ui/money.js';
+
+// 返金規定（KANOA⇔1次の契約条件）: RAと、この求人を提示された1次パートナーだけ。
+// それ以外にはDBが行を返さないので、何も表示しない
+async function refundSection(job) {
+  if (!(S.role === 'ra' || S.company?.tier === 1)) return '';
+  const { data, error } = await sb().from('v2_job_refund_policies').select('policy').eq('job_id', job.id).maybeSingle();
+  if (error) throw userError(error, '返金規定を読み込めませんでした');
+  if (!data && S.role !== 'ra') return '';
+  const lines = refundPolicyLines(data?.policy);
+  return `<section class="card">
+    <h2>返金規定</h2>
+    ${lines.length ? `<ul class="req-list">${lines.map((l) => `<li>${esc(l)}</li>`).join('')}</ul>` : '<p>返金規定はありません（早期退職でも返金は発生しません）。</p>'}
+    <p class="hint">${S.role === 'ra' ? 'KANOAと1次パートナーの間の条件です。2次以降のパートナーには表示されません。「編集」から変更できます。'
+      : 'KANOAとあなたの会社の間の条件です。入社が確定した時点の規定が適用されます。'}</p>
+  </section>`;
+}
 
 async function frontOfferSection(job) {
   const [{ data: offer, error }, { count: fronts }] = await Promise.all([
@@ -24,7 +41,7 @@ async function frontOfferSection(job) {
       ${owner ? `<form class="offer-form" novalidate>
         <label class="check"><input type="checkbox" name="published" ${offer?.published ? 'checked' : ''}> フロントに公開する</label>
         <div class="field"><label for="of-fee">フロントに表示する紹介料（円）</label>
-          <input id="of-fee" name="fee" type="number" min="0" inputmode="numeric" value="${offer?.fee_display ?? ''}"></div>
+          <input id="of-fee" name="fee" type="number" min="0" step="1" inputmode="numeric" value="${offer?.fee_display ?? ''}"></div>
         <button class="btn btn-primary">保存</button>
       </form>`
       : `<p>${offer?.published ? `公開中（表示額 ${fmtYen(offer.fee_display)}）` : '公開していません'}</p>
@@ -36,10 +53,11 @@ async function frontOfferSection(job) {
       form.onsubmit = (e) => { e.preventDefault(); busy(form.querySelector('button'), async () => {
         const f = new FormData(form);
         const published = f.get('published') === 'on';
-        const feeStr = String(f.get('fee') || '').trim();
         try {
-          if (published && feeStr === '') throw new Error('公開するには、フロントに表示する紹介料を入力してください。');
-          const fee = feeStr === '' ? (offer?.fee_display ?? 0) : Number(feeStr);
+          // 入力欄そのものを渡す（全角数字・カンマ入りを「未入力」と取り違えない）
+          const feeIn = parseYen(form.querySelector('[name="fee"]'), 'フロントに表示する紹介料');
+          if (published && feeIn == null) throw new Error('公開するには、フロントに表示する紹介料を入力してください。');
+          const fee = feeIn ?? (offer?.fee_display ?? 0);
           if (offer) await updateRow('v2_job_offers', offer, { published, fee_display: fee });
           else if (published) {
             const { error: e2 } = await sb().from('v2_job_offers').insert({ job_id: job.id, company_id: S.company.id, fee_display: fee, published });
@@ -128,7 +146,7 @@ async function render(el, params) {
   a.querySelector('#j-edit')?.addEventListener('click', () => openJobEditor(job, reload).catch((e) => showError(e, '求人の編集')));
   a.querySelector('#j-apply')?.addEventListener('click', () => applyFlow(job).catch((e) => showError(e, '応募')));
 
-  const offer = S.role === 'ca' ? await frontOfferSection(job) : null;
+  const [offer, refundHtml] = await Promise.all([S.role === 'ca' ? frontOfferSection(job) : null, refundSection(job)]);
   el.innerHTML = `
     <div class="detail-grid">
       <section class="card">
@@ -156,6 +174,7 @@ async function render(el, params) {
           <ul class="req-list">${(job.entry_requirements || []).map((k) => `<li>${esc(fieldLabel(k))}</li>`).join('')}</ul>
           ${job.checks?.spi || job.checks?.compliance ? `<p class="hint">選考中に ${[job.checks.spi && 'SPI', job.checks.compliance && 'コンプライアンスチェック'].filter(Boolean).join('・')} があります。</p>` : ''}
         </section>
+        ${refundHtml}
         ${offer ? offer.html : ''}
       </div>
     </div>`;
