@@ -24,6 +24,7 @@ const FN_ERRORS = {
   name_required: '名前を入力してください。',
   use_account_page: '自分のパスワードは「アカウント」画面から変更してください。',
   tier_limit: 'これ以上深い階層は作れません。',
+  v1_locked: 'V1から移したアカウントは、切替日まで変更できません。',
 };
 
 // Edge Function 呼び出し（ログイン中ならトークンを付ける）

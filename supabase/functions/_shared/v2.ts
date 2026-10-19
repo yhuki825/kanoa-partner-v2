@@ -27,6 +27,10 @@ export function tempPassword(len = 12): string {
   return Array.from(r, (n) => chars[n % chars.length]).join("");
 }
 
+// ⚠ V1 から移したアカウント（v2_v1_map の代表CA、または @partner.kanoa.local のログイン用アカウント）は
+//   V1 の本番のログインと共用。v2_members やそのログイン用アカウント（auth）を更新・付け替える Edge Function は、
+//   書き込みの前に必ず rpc("v2_member_v1_locked", { p_member }) で確かめ、true（または取得失敗）なら
+//   { error: "v1_locked" }（P0403）で断ること。例: v2-member-reset。切替（--activate-members）後は false が返る
 export type Caller = {
   memberId: string; userId: string; role: "ra" | "ca";
   companyId: string | null; tier: number | null; isOwner: boolean;

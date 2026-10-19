@@ -18,6 +18,12 @@ Deno.serve(async (req) => {
     .eq("id", b.member_id).maybeSingle();
   if (!t || t.role !== "ca") return json({ error: "not_found" }, 404);
   if (t.id === me.memberId) return json({ error: "use_account_page" }, 400);
+  // V1 から移したアカウント（V1 の本番のログイン用アカウントに結びついている）は、切替日まで誰からも書き換えない（権限の判定より先に止める）
+  const { data: locked, error: el } = await sb.rpc("v2_member_v1_locked", { p_member: t.id });
+  if (el) { console.error(el); return json({ error: "server" }, 500); }
+  if (locked !== false) {
+    return json({ error: "v1_locked", code: "P0403", hint: "V1から移したアカウントは、切替日まで変更できません" }, 403);
+  }
   const allowed = me.role === "ra" || (me.isOwner && me.companyId === t.company_id && !t.is_owner);
   if (!allowed) return json({ error: "owner_only" }, 403);
 

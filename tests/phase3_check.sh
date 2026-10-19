@@ -74,7 +74,10 @@ ok "外部求人のURLは http(s) のみ"                  "$(rpc "$A" v2_regist
 RAUID=$(one "select user_id from v2_members where role='ra' limit 1")
 ra(){ sql "begin; select set_config('request.jwt.claims','{\"sub\":\"$RAUID\",\"role\":\"authenticated\"}',true); set local role authenticated; $1; commit;"; }
 ok "RA: 紹介された選考は次郎・三郎・花子（外部求人は見えない）" \
-  "$(ra "select string_agg(candidate_name, ',' order by candidate_name) r from v2_selection_list('received')" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" "テスト三郎,テスト次郎,テスト花子"
+  "$(ra "select string_agg(l.candidate_name, ',' order by l.candidate_name) r from v2_selection_list('received', 'テスト', 200, 0) l join v2_applications a on a.id = l.id join v2_companies co on co.id = a.applied_by_company where co.code in ('A99999','B00001')" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" "テスト三郎,テスト次郎,テスト花子"   # V1 から移行した選考も並ぶため、テスト用の会社の分に絞る
+RECV=$(one "select count(*) from v2_applications where applied_by_company is not null and kanoa_visible")
+ok "RA: 紹介された選考の総数がDBの実数と一致（KANOA自身の選考・KANOAに届いていない選考は含まない）" \
+  "$(ra "select coalesce(max(total), 0) r from v2_selection_list('received', '', 1, 0)" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" "$RECV"
 EXPECT=$(one "select count(*) from v2_applications where stage='relay' and holder_company_id is null and kanoa_visible")
 ok "RA: 受入待ちの件数がDBの実数と一致"             "$(ra "select v2_waiting_count() r" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" "$EXPECT"
 ok "RA: 外部求人の行は読めない"                     "$(ra "select count(*) r from v2_applications where kind='external'" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" "0"

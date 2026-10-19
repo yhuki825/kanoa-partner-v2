@@ -41,8 +41,14 @@ ok "A社: 他社のメンバーはフロントの代表者だけ見える" "$(ge
 ok "B社: 自社メンバーだけ"                 "$(get "$B" 'v2_members?select=login_id' | codes login_id)" "B00001-01"
 ok "未ログイン: 会社は何も見えない"         "$(curl -s "$BASE/rest/v1/v2_companies?select=code" -H "apikey: $AK")" "[]"
 
-ok "お知らせ: A社は全社向けだけ（下書き・B社向けは見えない）" "$(get "$A" 'v2_notices?select=title' | codes title)" "全社向け（テスト）"
-ok "お知らせ: B社は全社向け＋B社向け"                         "$(get "$B" 'v2_notices?select=title' | codes title)" "B社向け（テスト）,全社向け（テスト）"
+# V1 から移行した本物のお知らせ（全社向け）も見えるため、名前の照合はテスト用のお知らせに絞る（2026-10-19 移行のお試しで変更）
+tn(){ python3 -c 'import json,sys;d=json.load(sys.stdin);print(",".join(sorted(x["title"] for x in d if x["title"].endswith("（テスト）"))) if isinstance(d,list) else "ERR")'; }
+cnt(){ python3 -c 'import json,sys;d=json.load(sys.stdin);print(len(d) if isinstance(d,list) else "ERR")'; }
+pub_for(){ sql "select count(*) n from v2_notices where status='published' and (audience='all' or (select id from v2_companies where code='$1') = any(target_company_ids))" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["n"])'; }
+ok "お知らせ: A社は全社向けだけ（下書き・B社向けは見えない）" "$(get "$A" 'v2_notices?select=title' | tn)" "全社向け（テスト）"
+ok "お知らせ: B社は全社向け＋B社向け"                         "$(get "$B" 'v2_notices?select=title' | tn)" "B社向け（テスト）,全社向け（テスト）"
+ok "お知らせ: A社に見えるのは公開中の全社向け＋自社向けの全件（移行分を含む・DBの実数と一致）" "$(get "$A" 'v2_notices?select=id' | cnt)" "$(pub_for A99999)"
+ok "お知らせ: B社に見えるのは公開中の全社向け＋自社向けの全件（移行分を含む・DBの実数と一致）" "$(get "$B" 'v2_notices?select=id' | cnt)" "$(pub_for B00001)"
 ok "CAはお知らせを作れない" "$(curl -s -X POST "$BASE/rest/v1/v2_notices" -H "apikey: $AK" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d '{"title":"x"}' | python3 -c 'import json,sys;print(json.load(sys.stdin).get("code"))')" "42501"
 
 ok "代表でないCAはCAを追加できない" "$(curl -s -X POST "$BASE/functions/v1/v2-member-create" -H "apikey: $AK" -H "Authorization: Bearer $C" -H 'Content-Type: application/json' -d '{"name":"x"}' | python3 -c 'import json,sys;print(json.load(sys.stdin).get("error"))')" "owner_only"
@@ -53,7 +59,8 @@ V=$(get "$C" "v2_members?select=version&login_id=eq.$A_CA_ID" | python3 -c 'impo
 ok "古いversionでの更新は衝突で止まる" "$(curl -s -X PATCH "$BASE/rest/v1/v2_members?login_id=eq.$A_CA_ID" -H "apikey: $AK" -H "Authorization: Bearer $C" -H 'Content-Type: application/json' -d "$(j name "古い画面" version "=$((V-1))")" | python3 -c 'import json,sys;print(json.load(sys.stdin).get("code"))')" "P0409"
 
 RAUID=$(sql "select user_id from v2_members where role='ra' limit 1" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["user_id"])')
-ok "RA: 全社・全お知らせ（下書き含む）が見える" "$(sql "begin; select set_config('request.jwt.claims','{\"sub\":\"$RAUID\",\"role\":\"authenticated\"}',true); set local role authenticated; select (select count(*) from v2_companies)||'/'||(select count(*) from v2_notices where title like '%（テスト）') r; commit;" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" "2/3"
+ok "RA: 全社・全お知らせ（下書き含む）が見える" "$(sql "begin; select set_config('request.jwt.claims','{\"sub\":\"$RAUID\",\"role\":\"authenticated\"}',true); set local role authenticated; select (select count(*) from v2_companies)||'/'||(select count(*) from v2_notices where title like '%（テスト）') r; commit;" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')" \
+  "$(sql "select (select count(*) from v2_companies)||'/3' r" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["r"])')"   # 全社＝DBの実数（V1 から移行した会社を含む）
 
 ok "V1が無傷（V1のログイン用アカウント26件）" "$(sql "select count(*) c from auth.users where email like '%@partner.kanoa.local'" | python3 -c 'import json,sys;print(json.load(sys.stdin)[0]["c"])')" "26"
 

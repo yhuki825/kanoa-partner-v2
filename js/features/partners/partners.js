@@ -44,7 +44,7 @@ async function render(el) {
   const owner = S.member.is_owner;
   const me = S.company.id;
   const [{ data: members, error: e1 }, { data: fronts, error: e2 }, { data: invs, error: e3 }, { data: jobs, error: e4 }, { data: offers, error: e5 }] = await Promise.all([
-    sb().from('v2_members').select('*').eq('company_id', me).order('login_id'),
+    sb().from('v2_members').select('*,v2_v1_locked').eq('company_id', me).order('login_id'),   // v2_v1_locked: V1 から移した切替前のアカウント
     sb().from('v2_companies').select('id,code,name,status,created_at,tier').eq('parent_id', me).order('code'),
     sb().from('v2_invites').select('*').eq('issued_by', me).in('status', ['issued', 'expired']).order('created_at', { ascending: false }),
     sb().from('v2_jobs').select('id,title,status,client:v2_clients!v2_jobs_client_id_fkey(name),v2_my_fee').order('updated_at', { ascending: false }).limit(200),
@@ -77,8 +77,8 @@ async function render(el) {
           <td class="mono">${esc(m.login_id)}</td>
           <td>${esc(m.name)}${m.is_owner ? ' <span class="tag">代表者</span>' : ''}${m.id === S.member.id ? ' <span class="tag">あなた</span>' : ''}</td>
           <td>${esc(m.email || '—')}</td>
-          <td>${m.status === 'active' ? (m.must_change_pw ? '<span class="tag st-relay">初回ログイン待ち</span>' : '利用中') : '<span class="tag st-closed">停止中</span>'}</td>
-          ${owner ? `<td class="row-actions">${m.is_owner ? '' : `
+          <td>${m.v2_v1_locked ? '<span class="tag">V1から移行（切替日に有効化）</span>' : m.status === 'active' ? (m.must_change_pw ? '<span class="tag st-relay">初回ログイン待ち</span>' : '利用中') : '<span class="tag st-closed">停止中</span>'}</td>
+          ${owner ? `<td class="row-actions">${m.is_owner || m.v2_v1_locked ? '' : `
             <button class="btn btn-sm" data-reset="${esc(m.id)}">パスワード再設定</button>
             <button class="btn btn-sm" data-status="${esc(m.id)}">${m.status === 'active' ? '停止' : '再開'}</button>`}</td>` : ''}
         </tr>`).join('')}</tbody></table></div>
