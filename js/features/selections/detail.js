@@ -1,4 +1,4 @@
-// 選考詳細: 求職者・求人・紹介料・選考の進み具合・経路／右側に連絡（第4段階）
+// 選考詳細: 求職者・求人・紹介料・書類（履歴書・職務経歴書）・選考の進み具合・経路／右側に連絡（第4段階）
 // 操作: 送客・見送り（判断待ちの会社）、受入・見送り（KANOAに届いたときのRA）、辞退（紹介した側）
 //       進み具合の更新（社内求人=RA、外部求人=登録した会社）
 import { register, setTopbarActions } from '../../router.js';
@@ -8,6 +8,7 @@ import { esc, fmtDateTime, fmtYen } from '../../ui/format.js';
 import { openModal, showError, toast, busy, confirmDialog } from '../../ui/components.js';
 import { userError } from '../../ui/db.js';
 import { stageTag, RESULT_LABEL, EVENT_LABEL } from '../../ui/selection.js';
+import { openFile } from '../../ui/files.js';
 import { mountChat } from './chat.js';
 
 const owns = (companyId) => (companyId ? companyId === S.company?.id : S.role === 'ra');
@@ -37,11 +38,14 @@ async function render(el, params) {
     .eq('id', params.id).maybeSingle();
   if (error) throw userError(error, '選考を読み込めませんでした');
   if (!a) { el.innerHTML = '<div class="empty">この選考は見つからないか、見る権限がありません。</div>'; return; }
-  const [{ data: ms, error: e2 }, { data: events, error: e3 }] = await Promise.all([
+  const [{ data: ms, error: e2 }, { data: events, error: e3 }, { data: files, error: e4 }] = await Promise.all([
     sb().from('v2_milestones').select('*').eq('application_id', a.id).order('seq'),
     sb().rpc('v2_application_events_for', { p_app: a.id }),
+    // 履歴書・職務経歴書（この選考に関わる会社は、選考を通して求職者の書類を見られる。DBの権限で判定）
+    sb().from('v2_candidate_files').select('id, kind, name, storage_path, created_at').eq('candidate_id', a.candidate_id).in('kind', ['resume', 'cv']).order('created_at'),
   ]);
   if (e2 || e3) throw userError(e2 || e3, '選考の詳細を読み込めませんでした');
+  if (e4) console.warn('v2_candidate_files', e4);   // 書類が読めなくても選考の詳細は出す
 
   const isRA = S.role === 'ra';
   const waitingMe = a.stage === 'relay' && ((isRA && !a.holder_company_id && a.kanoa_visible) || (a.holder_company_id && a.holder_company_id === S.company?.id));
@@ -86,6 +90,14 @@ async function render(el, params) {
           </dl>
         </section>
         <section class="card">
+          <h2>書類</h2>
+          ${e4 ? '<p class="sub">書類を読み込めませんでした。画面を読み込み直してください。</p>' : `<dl class="kv sel-docs">${[['resume', '履歴書'], ['cv', '職務経歴書']].map(([k, label]) => {
+            const list = (files || []).filter((x) => x.kind === k);
+            return `<dt>${label}</dt><dd>${list.length ? list.map((x) => `<a href="#" class="doc-link" data-file="${x.id}">📄 ${esc(x.name)}</a>`).join('<br>')
+              : '<span class="sub">未登録</span>'}</dd>`;
+          }).join('')}</dl>`}
+        </section>
+        <section class="card">
           <h2>選考の進み具合</h2>
           ${a.stage === 'relay' ? '<p class="sub">KANOAが受け入れると、選考フローの各段階がここに並びます。</p>'
           : ms.length ? `<div class="table-wrap"><table class="table ms-table">
@@ -117,6 +129,9 @@ async function render(el, params) {
   const reload = () => { el.__cleanup?.(); render(el, params); };
   el.__cleanup = mountChat(el.querySelector('#sel-chat'), a,
     { onUnreadChange: () => document.dispatchEvent(new CustomEvent('v2:selection-changed')) });
+  el.querySelectorAll('[data-file]').forEach((x) => {
+    x.onclick = (e) => { e.preventDefault(); openFile(files.find((f) => f.id === x.dataset.file)).catch((err) => showError(err, '書類を開く')); };
+  });
   el.querySelector('#open-job')?.addEventListener('click', (e) => { e.preventDefault(); window.open(`${location.pathname}#/job?id=${a.job_id}`, '_blank'); });
 
   const call = async (fn, args, msg) => {

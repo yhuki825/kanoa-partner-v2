@@ -34,7 +34,7 @@ export async function openJobEditor(job, onDone) {
       <button type="button" class="btn btn-sm" data-act="rm-refund">削除</button>
     </div>`;
   const policyRows = [...(refund?.policy || [])].sort((a, b) => a.months - b.months);
-  const j = job || { title: '', description: '', conditions: '', entry_requirements: ['name'], flow: ['書類選考', '一次面接', '最終面接', '内定', '入社'], checks: { spi: false, compliance: false }, status: 'open' };
+  const j = job || { title: '', description: '', conditions: '', entry_requirements: ['name'], flow: ['書類選考', '一次面接', '二次面接', '最終面接', '内定', '入社'], checks: { spi: false, compliance: false }, status: 'open' };
   const shareOf = (cid) => shares.find((s) => s.company_id === cid);
   const req = new Set(j.entry_requirements);
 

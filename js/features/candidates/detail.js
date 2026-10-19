@@ -25,7 +25,7 @@ function externalModal(c, existing) {
       <div class="field"><label for="ex-co">求人企業名</label><input id="ex-co" name="company"></div>
       <div class="field"><label for="ex-title">求人名・職種</label><input id="ex-title" name="title"></div>
       <div class="field"><label for="ex-date">応募日</label><input id="ex-date" name="applied_on" type="date" value="${today}"></div>
-      <div class="field"><label for="ex-flow">選考フロー（1行に1段階）</label><textarea id="ex-flow" name="flow" rows="4">書類選考\n面接\n内定</textarea></div>
+      <div class="field"><label for="ex-flow">選考フロー（1行に1段階）</label><textarea id="ex-flow" name="flow" rows="6">書類選考\n一次面接\n二次面接\n最終面接\n内定\n入社</textarea></div>
       <div class="field"><label for="ex-memo">メモ（自社の中だけ）</label><textarea id="ex-memo" name="memo" rows="2"></textarea></div>
       <div class="modal-actions"><button type="button" class="btn" data-act="cancel">キャンセル</button><button class="btn btn-primary">登録して選考を始める</button></div>
     </form>`);
