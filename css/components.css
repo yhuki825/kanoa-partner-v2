@@ -109,3 +109,5 @@ dl.kv dt { color: var(--c-text-sub); }
 .chip:hover { border-color: var(--c-primary); }
 .chip.active { background: var(--c-primary); border-color: var(--c-primary); color: #fff; }
 .chip.active .tab-count { color: #fff; opacity: .85; }
+/* 一覧の部分だけを取り直している間（前の表を薄くして残す。画面全体の「読み込み中」は出さない） */
+.is-loading { opacity: .5; pointer-events: none; transition: opacity .12s; }
