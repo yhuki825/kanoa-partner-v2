@@ -91,3 +91,11 @@ a.nav-item.active { color: var(--c-primary-ink); }
   .sidebar .who { display: none; }
   .sidebar nav { flex-direction: row; }
 }
+/* 画面の切り替え中（0.15秒を超えたときだけ）: 前の画面を少し薄くし、上に細い帯を流す */
+body.is-routing #view { opacity: .6; transition: opacity .15s; pointer-events: none; }
+body.is-routing .topbar::after {
+  content: ''; position: absolute; left: 0; bottom: -1px; height: 2px; width: 35%;
+  background: var(--c-primary); animation: route-bar 1s ease-in-out infinite;
+}
+@keyframes route-bar { 0% { left: -35%; } 100% { left: 100%; } }
+@media (prefers-reduced-motion: reduce) { body.is-routing .topbar::after { animation: none; left: 0; width: 100%; opacity: .5; } }

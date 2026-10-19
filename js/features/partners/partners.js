@@ -43,17 +43,18 @@ function addMemberModal(onDone) {
 async function render(el) {
   const owner = S.member.is_owner;
   const me = S.company.id;
-  const [{ data: members, error: e1 }, { data: fronts, error: e2 }, { data: invs, error: e3 }, { data: jobs, error: e4 }, { data: offers, error: e5 }] = await Promise.all([
+  // フロントへの支払い（自社が支払う報酬の行。1000件ずつ全部）も、ほかの読み込みと並べて取る
+  const paysP = loadRewardRows((q) => q.eq('payer_company_id', me));
+  const [{ data: members, error: e1 }, { data: fronts, error: e2 }, { data: invs, error: e3 }, { data: jobs, error: e4 }, { data: offers, error: e5 }, pays] = await Promise.all([
     sb().from('v2_members').select('*,v2_v1_locked').eq('company_id', me).order('login_id'),   // v2_v1_locked: V1 から移した切替前のアカウント
     sb().from('v2_companies').select('id,code,name,status,created_at,tier').eq('parent_id', me).order('code'),
     sb().from('v2_invites').select('*').eq('issued_by', me).in('status', ['issued', 'expired']).order('created_at', { ascending: false }),
     sb().from('v2_jobs').select('id,title,status,client:v2_clients!v2_jobs_client_id_fkey(name),v2_my_fee').order('updated_at', { ascending: false }).limit(200),
     sb().from('v2_job_offers').select('*').eq('company_id', me),
+    paysP,
   ]);
   const err = e1 || e2 || e3 || e4 || e5;
   if (err) throw userError(err, 'パートナー管理を読み込めませんでした');
-  // フロントへの支払い（自社が支払う報酬の行。1000件ずつ全部）
-  const pays = await loadRewardRows((q) => q.eq('payer_company_id', me));
   // フロントの代表者（連絡先）
   let reps = {};
   if (fronts.length) {

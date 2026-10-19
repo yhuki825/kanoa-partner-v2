@@ -62,19 +62,23 @@ export async function renderView() {
   document.title = `${titleOf(def)}｜KANOA Partner Portal`;
   document.getElementById('topbar-actions').innerHTML = '';
   document.querySelectorAll('.nav-item[data-path]').forEach((b) => b.classList.toggle('active', b.dataset.path === (def.navParent || path)));
-  // 画面を作り直す（前の画面のDOMは残さない）
+  // 新しい画面は見えないところで組み立て、できあがった瞬間に差し替える（前の画面のDOMは残さない）
+  // 組み立ての間は前の画面を見せたまま待つ。0.15秒を超えたら上に細い帯を出す（「読み込み中」で画面を消さない）
   const old = document.getElementById('view');
   try { old.__cleanup?.(); } catch {}
+  if (!old.childElementCount) old.innerHTML = '<div class="empty">読み込み中…</div>';   // 最初の表示だけ
   const el = old.cloneNode(false);
-  old.replaceWith(el);
-  el.innerHTML = '<div class="empty">読み込み中…</div>';
-  try {
-    await def.render(el, params);
-  } catch (e) {
-    if (seq !== renderSeq) return;
+  const slow = setTimeout(() => { if (seq === renderSeq) document.body.classList.add('is-routing'); }, 150);
+  let failed = null;
+  try { await def.render(el, params); } catch (e) { failed = e; }
+  clearTimeout(slow);
+  if (seq !== renderSeq) { try { el.__cleanup?.(); } catch {} return; }   // その間に別の画面へ移った → 捨てる
+  document.body.classList.remove('is-routing');
+  if (failed) {
     el.innerHTML = '<div class="empty">この画面を表示できませんでした。上の帯の内容を確認してください。</div>';
-    showError(e, `画面の表示: ${path}`);
+    showError(failed, `画面の表示: ${path}`);
   }
+  document.getElementById('view').replaceWith(el);
 }
 
 export function setBadge(path, count) {
