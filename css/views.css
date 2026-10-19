@@ -260,3 +260,18 @@ dd.url { word-break: break-all; }
 .reward-table td:nth-child(4), .reward-table td:nth-child(7) { white-space: nowrap; }
 .reward-table .tag { white-space: nowrap; }
 .reward-table .deduct { margin-top: 6px; padding-top: 6px; border-top: 1px dashed var(--c-border); display: flex; flex-direction: column; gap: 2px; }
+/* チャットの添付ファイル */
+.attach-list { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 0; border-top: 1px solid var(--c-border); }
+.attach-list[hidden] { display: none; }
+.attach-chip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 3px 4px 3px 8px; border: 1px solid var(--c-border); border-radius: 8px; font-size: 12px; background: var(--c-surface); }
+.attach-chip button { border: none; background: none; cursor: pointer; font-size: 14px; line-height: 1; padding: 2px 4px; color: var(--c-text-sub); }
+.msg-files { display: flex; flex-direction: column; gap: 6px; margin-top: 6px; }
+.msg-files:first-child { margin-top: 0; }
+.msg-img { border: none; padding: 0; background: none; cursor: zoom-in; align-self: flex-start; }
+.msg-img img { display: block; max-width: 220px; max-height: 180px; min-width: 60px; min-height: 40px; border-radius: 8px; background: #e5e7eb; object-fit: cover; }
+.msg-file { display: flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px; background: rgba(255,255,255,.85); color: var(--c-text); text-decoration: none; font-size: 12.5px; max-width: 260px; }
+.msg-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.msg-file small { color: var(--c-text-sub); flex-shrink: 0; }
+.msg.other .msg-file { background: #fff; }
+.img-view { text-align: center; }
+.img-view img { max-width: 100%; max-height: 70vh; border-radius: 8px; }

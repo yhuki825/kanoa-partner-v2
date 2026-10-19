@@ -1,6 +1,7 @@
 // 選考ごとのチャット（選考詳細の右側）
 // 相手は直上と直下だけ。中間の会社は「アップラインとの連絡」「紹介元との連絡」をタブで切り替える
 // 送信は送信ボタン or ⌘/Ctrl+Enter（Enter単体は改行。誤送信防止・ユーザー指定）
+// PDF・画像を添えて送れる（1回5つ・1つ10MBまで。置き場の権限で会話の2社だけが開ける。ui/chat-files.js）
 // 更新はリアルタイム配信＋保険の定期取得（配信が止まっていても会話が止まらない。V1の教訓）
 import { sb } from '../../supabase.js';
 import { S } from '../../store.js';
@@ -8,12 +9,16 @@ import { esc, fmtDateTime } from '../../ui/format.js';
 import { icon } from '../../ui/icons.js';
 import { openModal, confirmDialog, showError, busy } from '../../ui/components.js';
 import { userError } from '../../ui/db.js';
+import { CHAT_ACCEPT, CHAT_MAX_FILES, checkChatFile, uploadChatFile, removeChatFiles, retryChatFileRemoval, chatFileUrls, cachedChatUrl, isImage, fmtSize } from '../../ui/chat-files.js';
 
 const REACTIONS = ['👍', '✅', '🙏', '😄', '🎉'];
 const STAMPS = ['👍', '🙏', '🎉', '💪', '😄', '🙇', '✨', '⭕', '❌', '⏰'];
 const POLL_MS = 15000;
 
 const tabLabel = (t) => (t.my_side === 'self' ? `アップラインとの連絡` : `紹介元との連絡`);
+// 返信先・ピン留めに出す短い文（ファイルだけのメッセージはファイル名）
+const textOf = (m) => m.stamp || m.body
+  || (m.files?.length ? `📎 ${m.files[0].name}${m.files.length > 1 ? ` ほか${m.files.length - 1}件` : ''}` : '');
 
 export function mountChat(box, app, { onUnreadChange } = {}) {
   let threads = [];
@@ -27,6 +32,7 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
   let seq = 0;               // 読み込みの順番（遅れて返ってきた古い結果を捨てる）
   let holdUnread = false;    // 「未読に戻す」を押した後は、自分が操作するまで自動で既読にしない
   let lastMarked = null;     // 最後に既読にした時点の相手の最新メッセージ時刻
+  let pending = [];          // 送る前の添付ファイル（File）
 
   async function loadThreads() {
     const { data, error } = await sb().rpc('v2_my_threads', { p_app: app.id });
@@ -53,8 +59,11 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
       <div class="pin-bar" hidden></div>
       <div class="conv-body" aria-live="polite"></div>
       <div class="reply-bar" hidden><span></span><button class="btn btn-sm" data-act="reply-cancel">取消</button></div>
+      <div class="attach-list" hidden></div>
       <form class="composer" novalidate>
         <button type="button" class="btn" data-act="stamp" title="スタンプ" aria-label="スタンプ">🙂</button>
+        <button type="button" class="btn" data-act="attach" title="PDF・画像を添付（5つ・各10MBまで）" aria-label="ファイルを添付">📎</button>
+        <input type="file" class="attach-input" multiple accept="${CHAT_ACCEPT}" hidden>
         <label class="sr-only" for="chat-input">メッセージ</label>
         <textarea id="chat-input" rows="2" placeholder="メッセージ（${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enterで送信）"></textarea>
         <button class="btn btn-primary">送信</button>
@@ -71,6 +80,10 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
     box.querySelector('.conv-body').addEventListener('click', release);
     box.querySelector('.composer textarea').addEventListener('focus', release);
     box.querySelector('[data-act="stamp"]').onclick = (e) => stampPicker(e.currentTarget);
+    const picker = box.querySelector('.attach-input');
+    box.querySelector('[data-act="attach"]').onclick = () => picker.click();
+    picker.onchange = () => { addFiles([...picker.files]); picker.value = ''; };
+    renderPending();
     const form = box.querySelector('.composer');
     const ta = form.querySelector('textarea');
     ta.addEventListener('keydown', (e) => {
@@ -78,17 +91,65 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
     });
     form.onsubmit = (e) => { e.preventDefault(); busy(form.querySelector('.btn-primary'), async () => {
       const body = ta.value.trim();
-      if (!body) return;
-      if (await send({ body })) { ta.value = ''; ta.dataset.dirty = ''; }
+      const sent = [...pending];   // 送る分の写し（送信中に足した・外したものと混ざらないように）
+      if (!body && !sent.length) return;
+      if (await send({ body: body || null, files: sent })) {
+        if (ta.value.trim() === body) { ta.value = ''; ta.dataset.dirty = ''; }   // 送信中に書き足した分は残す
+        pending = pending.filter((f) => !sent.includes(f)); renderPending();      // 送った分だけ外す
+      }
     }); };
   }
 
-  async function send({ body = null, stamp = null }) {
-    const { error } = await sb().rpc('v2_msg_send', {
-      p_app: app.id, p_thread: current.thread_company_id, p_body: body, p_stamp: stamp, p_reply_to: replyTo });
-    if (error) { showError(userError(error, '送信できませんでした'), '連絡の送信'); return false; }
-    setReply(null); holdUnread = false;
-    await loadMessages(); return true;
+  // 添付の候補を足す（種類・大きさ・数を先に確かめる。だめなものは理由を出して足さない）
+  function addFiles(files) {
+    for (const file of files) {
+      try {
+        if (pending.length >= CHAT_MAX_FILES) throw new Error(`一度に送れるファイルは${CHAT_MAX_FILES}つまでです。`);
+        checkChatFile(file);
+        pending.push(file);
+      } catch (err) { showError(err, 'ファイルの添付'); }
+    }
+    renderPending();
+  }
+
+  function renderPending() {
+    const list = box.querySelector('.attach-list');
+    if (!list) return;
+    list.hidden = !pending.length;
+    list.innerHTML = pending.map((f, i) => `<span class="attach-chip">${isImage(f.type) ? '🖼' : '📄'} ${esc(f.name)}
+      <small class="sub">${fmtSize(f.size)}</small><button type="button" data-rm="${i}" aria-label="${esc(f.name)}を外す">×</button></span>`).join('');
+    list.querySelectorAll('[data-rm]').forEach((b) => { b.onclick = () => { pending.splice(Number(b.dataset.rm), 1); renderPending(); }; });
+  }
+
+  async function send({ body = null, stamp = null, files = [] }) {
+    // 送り始めた時点の会話・返信先・添付を控える（送信中にタブを替えたり返信先を選び直したりしても混ざらない）
+    const tid = current.thread_company_id;
+    const reply = replyTo;
+    const list = [...files];
+    const attachBtn = box.querySelector('[data-act="attach"]');
+    if (attachBtn) attachBtn.disabled = true;   // 送信中は添付を足させない
+    try {
+      // ファイルを置いてから、置いた場所を送信の関数に渡す（失敗したら置いたものを消す）
+      const placed = [];
+      try {
+        for (const f of list) placed.push(await uploadChatFile(app.id, tid, f));
+      } catch (err) {
+        await removeChatFiles(placed.map((p) => p.path));
+        showError(err, 'ファイルの送信'); return false;
+      }
+      const { error } = await sb().rpc('v2_msg_send', {
+        p_app: app.id, p_thread: tid, p_body: body, p_stamp: stamp, p_reply_to: reply,
+        p_files: placed.length ? placed : null });
+      if (error) {
+        await removeChatFiles(placed.map((p) => p.path));
+        showError(userError(error, '送信できませんでした'), '連絡の送信'); return false;
+      }
+      if (replyTo === reply) setReply(null);   // 送信中に別の返信先を選んでいたら、そちらは残す
+      holdUnread = false;
+      await loadMessages(); return true;
+    } finally {
+      if (attachBtn) attachBtn.disabled = false;
+    }
   }
 
   function setReply(m) {
@@ -96,7 +157,7 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
     const bar = box.querySelector('.reply-bar');
     if (!bar) return;
     bar.hidden = !m;
-    if (m) bar.querySelector('span').textContent = `返信先：${(m.stamp || m.body || '').slice(0, 40)}`;
+    if (m) bar.querySelector('span').textContent = `返信先：${textOf(m).slice(0, 40)}`;
   }
 
   function stampPicker(anchor) {
@@ -127,8 +188,9 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
         ${!m.mine && m.sender_name ? `<div class="msg-sender">${esc(m.sender_name)}</div>` : ''}
         <div class="msg ${side} ${m.stamp ? 'is-stamp' : ''}">
           ${m.pinned ? `<span class="msg-pin" title="ピン留め">${icon('pin', 12)}</span>` : ''}
-          ${rep ? `<div class="msg-reply">↩ ${esc((rep.deleted ? '削除されたメッセージ' : (rep.stamp || rep.body || '')).slice(0, 40))}</div>` : ''}
-          ${m.stamp ? `<div class="msg-stamp">${esc(m.stamp)}</div>` : `<div class="msg-body pre">${esc(m.body)}</div>`}
+          ${rep ? `<div class="msg-reply">↩ ${esc((rep.deleted ? '削除されたメッセージ' : textOf(rep)).slice(0, 40))}</div>` : ''}
+          ${m.stamp ? `<div class="msg-stamp">${esc(m.stamp)}</div>` : (m.body ? `<div class="msg-body pre">${esc(m.body)}</div>` : '')}
+          ${filesHtml(m)}
         </div>
         ${reactionsHtml(m)}
         <div class="msg-meta">
@@ -136,9 +198,53 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
           <a href="#" data-act="react" aria-label="リアクション">😊</a>
           <a href="#" data-act="reply">返信</a>
           <a href="#" data-act="pin">${m.pinned ? 'ピン解除' : 'ピン'}</a>
-          ${m.mine ? `${m.stamp ? '' : '<a href="#" data-act="edit">編集</a>'}<a href="#" data-act="delete">削除</a>` : ''}
+          ${m.mine ? `${m.body ? '<a href="#" data-act="edit">編集</a>' : ''}<a href="#" data-act="delete">削除</a>` : ''}
         </div>
       </div>`;
+  }
+
+  // 添付: 画像は小さく表示（押すと大きく）、PDFはファイル名のカード（押すと別タブで開く）
+  function filesHtml(m) {
+    if (!m.files?.length) return '';
+    return `<div class="msg-files">${m.files.map((f, i) => (isImage(f.mime)
+      ? `<button type="button" class="msg-img" data-file="${i}" title="${esc(f.name)}"><img data-path="${esc(f.path)}" alt="${esc(f.name)}"></button>`
+      : `<a href="#" class="msg-file" data-file="${i}">📄 <span>${esc(f.name)}</span><small>${fmtSize(f.size)}</small></a>`)).join('')}</div>`;
+  }
+
+  async function fillFiles(body) {
+    const paths = messages.flatMap((m) => (m.files || []).map((f) => f.path));
+    if (!paths.length) return;
+    const urls = await chatFileUrls(paths);
+    if (!alive) return;
+    body.querySelectorAll('img[data-path]').forEach((img) => { const u = urls[img.dataset.path]; if (u && img.src !== u) img.src = u; });
+  }
+
+  async function openChatFile(f) {
+    const urlOf = async () => cachedChatUrl(f.path) || (await chatFileUrls([f.path]))[f.path] || null;
+    const fail = () => new Error('ファイルを開けませんでした。画面を読み込み直してください。');
+    let win = null;
+    try {
+      // 画像は画面の中で拡大する（別ウィンドウは開かない）。URLを待ってから表示する
+      if (isImage(f.mime)) {
+        const url = await urlOf();
+        if (!url) throw fail();
+        const md = openModal(`<h3>${esc(f.name)}</h3><div class="img-view"><img src="${esc(url)}" alt="${esc(f.name)}"></div>
+          <div class="modal-actions"><a class="btn" href="${esc(url)}" target="_blank" rel="noopener">別タブで開く</a><button class="btn btn-primary" data-act="close">閉じる</button></div>`);
+        md.el.querySelector('[data-act="close"]').onclick = () => md.close();
+        return;
+      }
+      // PDF: 先に作っておいたURLがあれば、そのまま開く。無ければ先に空のタブを開いてから待つ（待ってから開くとポップアップが止められるため）
+      const cached = cachedChatUrl(f.path);
+      if (cached) { window.open(cached, '_blank', 'noopener'); return; }
+      win = window.open('', '_blank');
+      const url = await urlOf();
+      if (!url) throw fail();
+      if (win) { win.opener = null; win.location.href = url; } else window.open(url, '_blank', 'noopener');
+    } catch (err) {
+      try { win?.close(); } catch { /* 閉じられなくても続ける */ }
+      console.warn('添付ファイルを開けませんでした', err);
+      showError(fail(), 'ファイル');
+    }
   }
 
   async function loadMessages({ older = false, silent = false } = {}) {
@@ -189,8 +295,9 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
     const pins = messages.filter((m) => m.pinned && !m.deleted);
     const pinBar = box.querySelector('.pin-bar');
     pinBar.hidden = !pins.length;
-    pinBar.innerHTML = pins.slice(-3).map((m) => `<a href="#" data-jump="${esc(m.id)}">${icon('pin', 12)} ${esc((m.stamp || m.body || '').slice(0, 40))}</a>`).join('');
+    pinBar.innerHTML = pins.slice(-3).map((m) => `<a href="#" data-jump="${esc(m.id)}">${icon('pin', 12)} ${esc(textOf(m).slice(0, 40))}</a>`).join('');
     bindMessages(body, byId);
+    fillFiles(body).catch((e) => console.warn('添付ファイルの表示に失敗', e));
   }
 
   function bindMessages(body, byId) {
@@ -208,11 +315,22 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
       act('reply', () => { setReply(m); box.querySelector('textarea').focus(); });
       act('pin', () => rpc('v2_msg_pin', { p_id: m.id, p_pinned: !m.pinned }, 'ピン留め'));
       act('delete', async () => {
-        if (!await confirmDialog('このメッセージを削除しますか？', { okLabel: '削除する', danger: true })) return;
-        rpc('v2_msg_delete', { p_id: m.id }, 'メッセージの削除');
+        const paths = (m.files || []).map((f) => f.path);
+        if (!await confirmDialog(`このメッセージを削除しますか？${paths.length ? '\n添付ファイルも削除され、相手も開けなくなります。' : ''}`, { okLabel: '削除する', danger: true })) return;
+        const { error } = await sb().rpc('v2_msg_delete', { p_id: m.id });
+        if (error) { showError(userError(error, '操作できませんでした'), 'メッセージの削除'); return; }
+        // 添付の実体も消す（置き場の配信が覚えている分・発行済みのURLでも開けなくなる。DBは削除済みのものだけ消すのを許す）
+        await removeChatFiles(paths);
+        await loadMessages();
       });
       act('edit', () => editModal(m));
       act('react', (e) => reactionPicker(e.target, m));
+      row.querySelectorAll('[data-file]').forEach((el) => {
+        el.addEventListener('click', (e) => {
+          e.preventDefault();
+          openChatFile(m.files[Number(el.dataset.file)]).catch((err) => console.warn('添付ファイルを開けませんでした', err));
+        });
+      });
     });
     body.querySelectorAll('.rx').forEach((b) => { b.onclick = () => rpc('v2_msg_react', { p_id: b.dataset.rx, p_emoji: b.dataset.emoji }, 'リアクション'); });
   }
@@ -259,7 +377,7 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
   }
 
   async function openThread(t) {
-    current = t; messages = []; hasOlder = false; replyTo = null; holdUnread = false; lastMarked = null;
+    current = t; messages = []; hasOlder = false; replyTo = null; holdUnread = false; lastMarked = null; pending = [];
     shell();
     await loadMessages();
   }
@@ -285,6 +403,8 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
     try {
       await loadThreads();
       if (!alive) return;
+      // 消し残した自分の添付（削除したメッセージの分・送れずに残った分）を消し直す。待たない・失敗しても何も出さない
+      if (threads.length) retryChatFileRemoval(app.id);
       current = threads.find((t) => Number(t.unread)) || threads[0] || null;
       shell();
       if (current) { await loadMessages(); if (alive) subscribe(); }
