@@ -178,7 +178,7 @@ tr.is-waiting td:first-child { box-shadow: inset 3px 0 0 var(--c-warn); }
 .ms-mark { font-weight: 700; }
 .tag.ms-tag-passed { background: #e8f6ee; color: #15803d; }
 .tag.ms-tag-failed { background: #fdeef1; color: #be123c; }
-.sel-layout { display: grid; grid-template-columns: minmax(0, 1fr) 360px; gap: 14px; align-items: start; }
+.sel-layout { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(420px, 1fr); gap: 14px; align-items: start; }   /* チャットを広めに（2026-10-19 ユーザー指定） */
 .sel-main .card + .card { margin-top: 14px; }
 .sel-chat { position: sticky; top: calc(var(--topbar-h) + 14px); min-height: 60vh; }
 .sel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; margin-bottom: 8px; }
@@ -207,6 +207,7 @@ dd.url { word-break: break-all; }
   .sel-chat { position: static; min-height: 0; }
 }
 .sel-table td:first-child { white-space: nowrap; }
+.sel-table .col-job { width: 28%; min-width: 260px; }   /* 求人企業・求人の列を広めに（2026-10-19 ユーザー指定） */
 
 /* ---- 第4段階: 選考チャット ---- */
 .sel-chat { display: flex; flex-direction: column; padding: 0; overflow: hidden; height: calc(100dvh - var(--topbar-h) - 40px); }
