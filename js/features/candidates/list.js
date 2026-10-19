@@ -26,10 +26,10 @@ async function render(el, params) {
       </form>
       <p class="count">${q ? `「${esc(q)}」の検索結果 ` : ''}${total.toLocaleString()}人</p>
       ${data.length ? `<div class="table-wrap"><table class="table">
-        <thead><tr><th>名前</th><th>${S.role === 'ra' ? '担当' : '担当パートナー'}</th><th>年齢</th><th>都道府県</th><th>メモ</th><th>登録日</th></tr></thead>
+        <thead><tr><th class="col-name">名前</th><th>${S.role === 'ra' ? '担当' : '担当パートナー'}</th><th>年齢</th><th>都道府県</th><th>メモ</th><th>登録日</th></tr></thead>
         <tbody>${data.map((c) => `
           <tr class="row-link" data-id="${c.id}" tabindex="0">
-            <td><a href="#/candidate?id=${c.id}"><b>${esc(c.name)}</b></a>${c.kana ? `<br><small class="sub">${esc(c.kana)}</small>` : ''}</td>
+            <td class="col-name"><a href="#/candidate?id=${c.id}"><b>${esc(c.name)}</b></a>${c.kana ? `<br><small class="sub">${esc(c.kana)}</small>` : ''}</td>
             <td>${esc(c.assigned_name || '—')}</td>
             <td>${ageOf(c.birth_date) ?? '—'}</td>
             <td>${esc(c.prefecture || '—')}</td>

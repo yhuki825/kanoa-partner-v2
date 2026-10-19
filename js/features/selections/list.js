@@ -48,10 +48,10 @@ async function render(el, params) {
       </form>
       ${tab === 'received' && waiting ? `<p class="callout">判断待ちが <b>${waiting}件</b> あります。上から順に確認してください。</p>` : ''}
       ${data.length ? `<div class="table-wrap"><table class="table sel-table">
-        <thead><tr><th>求職者</th><th>求人企業・求人</th><th>選考の進み具合</th>${tab === 'received' ? '<th>紹介元</th>' : ''}<th>状態</th><th>更新</th></tr></thead>
+        <thead><tr><th class="col-name">求職者</th><th>求人企業・求人</th><th>選考の進み具合</th>${tab === 'received' ? '<th>紹介元</th>' : ''}<th>状態</th><th>更新</th></tr></thead>
         <tbody>${data.map((a) => `
           <tr class="row-link ${a.waiting_me ? 'is-waiting' : ''}" data-id="${a.id}" tabindex="0">
-            <td><a href="#/selection?id=${a.id}"><b>${esc(a.candidate_name)}</b></a>${unreadOf[a.id] ? ` <span class="badge" title="未読の連絡">${unreadOf[a.id]}</span>` : ''}</td>
+            <td class="col-name"><a href="#/selection?id=${a.id}"><b>${esc(a.candidate_name)}</b></a>${unreadOf[a.id] ? ` <span class="badge" title="未読の連絡">${unreadOf[a.id]}</span>` : ''}</td>
             <td>${esc(a.client_name || '—')}<br><small class="sub">${esc(a.job_title)}${a.kind === 'external' ? '（外部求人）' : ''}</small></td>
             <td>${a.stage === 'relay' ? '<span class="sub">選考開始前</span>' : milestoneChips(a.milestones)}</td>
             ${tab === 'received' ? `<td>${esc(a.source_label || '—')}</td>` : ''}
