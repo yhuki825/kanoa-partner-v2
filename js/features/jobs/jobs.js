@@ -81,4 +81,4 @@ async function renderCA(el, params) {
 
 function render(el, params) { return S.role === 'ra' ? renderRA(el) : renderCA(el, params); }
 
-register('jobs', { title: () => (S.role === 'ra' ? '求人' : '求人検索'), icon: 'search', order: 20, render });
+register('jobs', { title: () => (S.role === 'ra' ? '求人' : '求人検索'), short: '求人', icon: 'search', order: 20, render });

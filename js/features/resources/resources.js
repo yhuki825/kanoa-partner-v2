@@ -119,4 +119,4 @@ async function render(el) {
   });
 }
 
-register('resources', { title: '各種資料', icon: 'folder', order: 40, render });
+register('resources', { title: '各種資料', short: '資料', icon: 'folder', order: 40, render });

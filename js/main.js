@@ -4,6 +4,7 @@ import { S } from './store.js';
 import { mountApp } from './router.js';
 import { showError } from './ui/components.js';
 import { startVersionCheck } from './version-check.js';
+import { watchTables } from './ui/responsive-tables.js';
 import { renderLogin } from './features/auth/login.js';
 import { renderForcePasswordChange } from './features/auth/change-password.js';
 
@@ -39,6 +40,7 @@ function enter() {
 
 async function boot() {
   startVersionCheck();
+  watchTables();   // スマホ幅で一覧の表をカード型にするための見出し付け
   try {
     if (await loadMe()) enter();
     else renderLogin(enter);

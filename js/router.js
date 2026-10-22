@@ -36,11 +36,11 @@ export function mountApp() {
         <div class="who">${who}</div>
         <nav>${nav.map(([p, d]) => `
           <a class="nav-item" href="#/${p}" data-path="${p}">
-            ${icon(d.icon)}<span class="nav-label">${esc(titleOf(d))}</span>
+            ${icon(d.icon)}<span class="nav-label">${esc(titleOf(d))}</span><span class="nav-short">${esc(d.short || titleOf(d))}</span>
             <span class="badge" data-badge="${p}" hidden></span>
           </a>`).join('')}</nav>
         <div class="spacer"></div>
-        <button class="nav-item" data-act="logout">${icon('logout')}<span class="nav-label">ログアウト</span></button>
+        <button class="nav-item nav-logout" data-act="logout">${icon('logout')}<span class="nav-label">ログアウト</span></button>
       </aside>
       <div class="main">
         <header class="topbar"><h1 id="view-title"></h1><div class="grow"></div><div id="topbar-actions"></div></header>

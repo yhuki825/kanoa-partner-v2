@@ -99,3 +99,72 @@ body.is-routing .topbar::after {
 }
 @keyframes route-bar { 0% { left: -35%; } 100% { left: 100%; } }
 @media (prefers-reduced-motion: reduce) { body.is-routing .topbar::after { animation: none; left: 0; width: 100%; opacity: .5; } }
+
+/* ==== スマホ向けの最適化（2026-10-22 ユーザー要望） ==== */
+.nav-short { display: none; }
+@media (max-width: 760px) {
+  /* 下のメニュー: 短い名前を付けて全項目を等幅で並べる（横スクロールさせない）。ログアウトはアカウント画面に */
+  .sidebar { overflow-x: hidden; padding: 4px 2px calc(4px + env(safe-area-inset-bottom)); }
+  .sidebar nav { flex: 1; min-width: 0; }
+  .sidebar .nav-item { flex: 1 1 0; min-width: 0; padding: 5px 0; gap: 2px; font-size: 9px; letter-spacing: -.04em; }
+  .sidebar .nav-short { display: block; max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sidebar .nav-logout { display: none; }
+  .sidebar .badge { position: absolute; top: 2px; right: calc(50% - 20px); }
+  .sidebar .nav-item { position: relative; }
+  .content { padding: 12px 12px calc(84px + env(safe-area-inset-bottom)); }
+
+  /* 上の帯: 題名は1行で省略、ボタンは折り返さない */
+  .topbar { padding: 0 12px; gap: 8px; }
+  .topbar h1 { font-size: 14px; flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .topbar .grow { display: none; }
+  #topbar-actions { display: flex; gap: 6px; flex-shrink: 0; }
+  #topbar-actions .btn { padding: 6px 10px; font-size: 12.5px; white-space: nowrap; }
+
+  /* 入力欄を押したときに iPhone が勝手に拡大しないよう、文字は16px以上 */
+  input, select, textarea { font-size: 16px; }
+
+  /* カード: 余白を詰める */
+  .card { padding: 14px; }
+
+  /* 一覧の表をカード型に（見出しは各セルの data-label から。選考の進み具合の表は幅に収まるので表のまま） */
+  .table-wrap:has(> .table:not(.ms-table)) { overflow-x: visible; }
+  .table:not(.ms-table) thead { display: none; }
+  .table:not(.ms-table), .table:not(.ms-table) tbody, .table:not(.ms-table) tr { display: block; width: 100%; }
+  .table:not(.ms-table) tr {
+    border: 1px solid var(--c-border); border-radius: 10px; padding: 10px 12px; margin-bottom: 10px; background: var(--c-surface);
+  }
+  .table:not(.ms-table) tr:hover td { background: none; }
+  /* 見出しは左に浮かせる（flow-root で、見出しが何行になってもセルの高さが伸びて下と重ならない） */
+  .table:not(.ms-table) td {
+    display: flow-root; border: none; padding: 3px 0 3px 7.4em; width: auto !important;
+    white-space: normal !important; overflow-wrap: anywhere;
+  }
+  .table:not(.ms-table) td::before {
+    content: attr(data-label); float: left; width: 6.8em; margin-left: -7.4em;
+    color: var(--c-text-sub); font-size: 11.5px; line-height: 1.6;
+  }
+  /* 1列目（名前・求職者など）はカードの題名として大きく、見出しなし */
+  .table:not(.ms-table) td:first-child { padding-left: 0; font-size: 15px; margin-bottom: 4px; }
+  .table:not(.ms-table) td:first-child::before, .table:not(.ms-table) td[data-label=""]::before { display: none; }
+  .table:not(.ms-table) td[data-label=""] { padding-left: 0; }
+  .table:not(.ms-table) td:empty { display: none; }
+  /* 操作ボタンの欄は見出しなしで横いっぱいに */
+  .table:not(.ms-table) td:has(> .reward-acts, > button, > .row-actions), .table:not(.ms-table) td.row-actions { padding-left: 0; }
+  .table:not(.ms-table) td:has(> .reward-acts, > button)::before, .table:not(.ms-table) td.row-actions::before { display: none; }
+  .table:not(.ms-table) td input:not([type=checkbox]), .table:not(.ms-table) td select { width: 100%; }
+  .ms-chips { display: flex; flex-direction: row; flex-wrap: wrap; gap: 4px; }
+  /* 選考の進み具合は、見出しを上に置いて横いっぱいに並べる */
+  .table:not(.ms-table) td:has(.ms-chips) { padding-left: 0; }
+  .table:not(.ms-table) td:has(.ms-chips)::before { float: none; display: block; width: auto; margin: 0 0 2px; }
+  .memo-cell { max-width: none; }
+
+  /* 選考詳細のチャット: 画面の高さに合わせる */
+  .sel-chat { height: 75dvh; }
+}
+/* .btn など後から読む指定に負けないよう !important */
+.mobile-only { display: none !important; }
+@media (max-width: 960px) {
+  .mobile-only { display: inline-flex !important; }
+  .jump-chat { width: 100%; justify-content: center; margin-bottom: 12px; }
+  #sel-chat { scroll-margin-top: calc(var(--topbar-h) + 8px); }
+}

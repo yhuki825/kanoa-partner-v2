@@ -150,7 +150,8 @@
 .req-list { padding-left: 18px; font-size: 13.5px; columns: 2; }
 .offer-form .check { margin-bottom: 8px; }
 @media (max-width: 760px) {
-  .form-grid, .detail-grid { grid-template-columns: 1fr; }
+  .form-grid, .detail-grid { grid-template-columns: minmax(0, 1fr); }   /* 中身の最小幅で列が画面より広がらないように */
+  .form-grid > *, .detail-grid > * { min-width: 0; }
   .share-row { flex-direction: column; align-items: stretch; }
   .share-row input[type="number"] { width: 100%; }
   .req-list { columns: 1; }

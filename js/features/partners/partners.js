@@ -159,4 +159,4 @@ async function render(el) {
   });
 }
 
-register('partners', { title: 'パートナー管理', icon: 'network', order: 50, roles: ['ca'], render });
+register('partners', { title: 'パートナー管理', short: 'パートナー', icon: 'network', order: 50, roles: ['ca'], render });

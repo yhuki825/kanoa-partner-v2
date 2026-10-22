@@ -68,6 +68,7 @@ async function render(el, params) {
   el.innerHTML = `
     <div class="sel-layout">
       <div class="sel-main">
+        <button type="button" class="btn mobile-only jump-chat" id="jump-chat">💬 連絡へ移動</button>
         ${waitingMe ? `<p class="callout">${isRA ? 'この選考はKANOAの受入待ちです。内容を確認して「受け入れて選考を始める」か「見送る」を選んでください。'
           : 'この選考はあなたの会社の判断待ちです。内容を確認して「アップラインへ送客」か「見送る」を選んでください。'}</p>` : ''}
         <section class="card">
@@ -129,6 +130,8 @@ async function render(el, params) {
   const reload = () => { el.__cleanup?.(); render(el, params); };
   el.__cleanup = mountChat(el.querySelector('#sel-chat'), a,
     { onUnreadChange: () => document.dispatchEvent(new CustomEvent('v2:selection-changed')) });
+  // スマホでは連絡が画面のいちばん下になるので、そこへ移動するボタン
+  el.querySelector('#jump-chat')?.addEventListener('click', () => el.querySelector('#sel-chat')?.scrollIntoView({ behavior: 'smooth', block: 'start' }));
   el.querySelectorAll('[data-file]').forEach((x) => {
     x.onclick = (e) => { e.preventDefault(); openFile(files.find((f) => f.id === x.dataset.file)).catch((err) => showError(err, '書類を開く')); };
   });

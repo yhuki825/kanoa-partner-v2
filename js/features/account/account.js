@@ -4,7 +4,7 @@ import { S } from '../../store.js';
 import { esc } from '../../ui/format.js';
 import { toast, showError, busy } from '../../ui/components.js';
 import { updateRow } from '../../ui/db.js';
-import { changePasswordWithCurrent } from '../../auth.js';
+import { changePasswordWithCurrent, logout } from '../../auth.js';
 import { tierLabel } from '../../config.js';
 
 async function render(el) {
@@ -32,7 +32,13 @@ async function render(el) {
         <div class="field"><label for="pw-new2">新しいパスワード（確認）</label><input id="pw-new2" name="pw2" type="password" required autocomplete="new-password"></div>
         <button class="btn btn-primary">変更する</button>
       </form>
+    </section>
+    <section class="card">
+      <h2>ログアウト</h2>
+      <p class="hint">この端末からログアウトします。</p>
+      <button class="btn" id="ac-logout">ログアウト</button>
     </section>`;
+  el.querySelector('#ac-logout').onclick = () => logout();
 
   el.querySelector('#f-profile').onsubmit = (e) => { e.preventDefault(); busy(e.target.querySelector('button'), async () => {
     const f = new FormData(e.target);

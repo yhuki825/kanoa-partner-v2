@@ -65,7 +65,7 @@ export function mountChat(box, app, { onUnreadChange } = {}) {
         <button type="button" class="btn" data-act="attach" title="PDF・画像を添付（5つ・各10MBまで）" aria-label="ファイルを添付">📎</button>
         <input type="file" class="attach-input" multiple accept="${CHAT_ACCEPT}" hidden>
         <label class="sr-only" for="chat-input">メッセージ</label>
-        <textarea id="chat-input" rows="2" placeholder="メッセージ（${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enterで送信）"></textarea>
+        <textarea id="chat-input" rows="2" placeholder="${matchMedia('(pointer: coarse)').matches ? 'メッセージ' : `メッセージ（${navigator.platform.includes('Mac') ? '⌘' : 'Ctrl'}+Enterで送信）`}"></textarea>
         <button class="btn btn-primary">送信</button>
       </form>`;
     box.querySelectorAll('[data-ti]').forEach((b) => { b.onclick = () => openThread(threads[Number(b.dataset.ti)]); });
