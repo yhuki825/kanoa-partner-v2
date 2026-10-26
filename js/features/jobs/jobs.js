@@ -7,12 +7,14 @@ import { esc, fmtYen } from '../../ui/format.js';
 import { showError } from '../../ui/components.js';
 import { userError } from '../../ui/db.js';
 import { openJobEditor, JOB_STATUS } from './editor.js';
+import { openJobImport } from './import.js';
 
 export function openJobTab(id) { window.open(`${location.pathname}#/job?id=${id}`, '_blank'); }
 
 async function renderRA(el) {
-  const a = setTopbarActions('<button class="btn btn-primary" id="j-new">求人を登録</button>');
+  const a = setTopbarActions('<button class="btn" id="j-import">CSVで一括登録</button><button class="btn btn-primary" id="j-new">求人を登録</button>');
   a.querySelector('#j-new').onclick = () => openJobEditor(null, () => render(el, {})).catch((e) => showError(e, '求人の登録'));
+  a.querySelector('#j-import').onclick = () => openJobImport(() => render(el, {}));
   const { data: jobs, error } = await sb().from('v2_jobs')
     .select('id,title,status,location,employment,updated_at,client:v2_clients!v2_jobs_client_id_fkey(name),v2_my_fee,shares:v2_job_shares!v2_job_shares_job_id_fkey(published)')
     .order('updated_at', { ascending: false }).limit(200);

@@ -277,3 +277,12 @@ dd.url { word-break: break-all; }
 .msg.other .msg-file { background: #fff; }
 .img-view { text-align: center; }
 .img-view img { max-width: 100%; max-height: 70vh; border-radius: 8px; }
+/* 求人のCSV一括登録 */
+.import-steps { padding-left: 20px; display: flex; flex-direction: column; gap: 10px; margin-bottom: 12px; font-size: 13.5px; }
+.import-steps small { display: block; margin-top: 4px; }
+.file-pick { cursor: pointer; }
+.import-guide { margin: 6px 0 12px; font-size: 13px; }
+.import-guide summary { cursor: pointer; color: var(--c-primary); }
+.guide-table td:first-child { white-space: nowrap; }
+.import-summary { display: flex; gap: 6px; flex-wrap: wrap; margin: 6px 0 10px; }
+.import-table tr.is-error td { background: #fdf3f5; }
