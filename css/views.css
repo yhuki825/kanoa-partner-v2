@@ -137,7 +137,15 @@
 .tag.st-open { background: #e8f6ee; color: #15803d; }
 .tag.st-paused { background: #fdf2e2; color: #b45309; }
 .tag.st-closed { background: #f1f2f4; color: #6b7280; }
-.job-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
+.job-list { display: grid; grid-template-columns: minmax(0, 1fr); gap: 8px; }   /* 縦一列（2026-10-29 ユーザー指定） */
+/* 横に広いので、左に求人企業・求人名・条件、右に紹介料を置く */
+@media (min-width: 761px) {
+  .job-list .job-card { display: grid; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "client fee" "title fee" "meta fee"; column-gap: 16px; align-items: center; }
+  .job-list .job-client { grid-area: client; }
+  .job-list .job-title { grid-area: title; }
+  .job-list .job-meta { grid-area: meta; }
+  .job-list .job-fee { grid-area: fee; justify-self: end; white-space: nowrap; }
+}
 .job-card { display: flex; flex-direction: column; gap: 4px; text-align: left; padding: 14px 16px; border: 1px solid var(--c-border); border-radius: var(--radius); background: var(--c-surface); }
 .job-card:hover { border-color: var(--c-primary); box-shadow: var(--shadow); }
 .job-client { font-size: 12px; color: var(--c-text-sub); }
