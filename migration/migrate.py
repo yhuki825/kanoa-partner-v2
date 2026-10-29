@@ -89,15 +89,16 @@ def report(before_f, after_f, run_f, copy_f, tests_f=None):
     def row(name, x, y, note='', ok=None):
         okv = (x == y) if ok is None else ok
         a(f'| {name} | {_n(x)} | {_n(y)} | {"○" if okv else "×"} | {note} |')
-    row('会社（agencies → v2_companies）', v1['agencies'] - acct['agency']['skipped'], v2['companies'], f'V1 全 {v1["agencies"]} 社のうち {acct["agency"]["skipped"]} 社は決定5で対象外')
+    row('会社（agencies → v2_companies）', v1['agencies'] - acct['agency']['skipped'], v2['companies'], f'V1 全 {v1["agencies"]} 社のうち {acct["agency"]["skipped"]} 社は対象外（決定5: KA999・RE999、2026-10-29: PT000）')
     row('代表CA（V1 のログイン用アカウントがある会社 → v2_members）', v1['agencies_migratable_with_auth'], v2['owner_members_by_code'],
         '会社コード経由で数えた。状態: ' + ', '.join(f'{k} {v}' for k, v in (v2['owner_members'] or {}).items()))
     row('求人（projects → v2_jobs）', v1['projects'], v2['jobs'], f'求人企業 {v2["clients"]} 社に集約')
     row('紹介料の合計（success_reward → v2_job_kanoa_fees）', v1['sum_success_reward'], v2['sum_job_kanoa_fee'], '円・税抜')
+    row('求人企業からの紹介料の合計（client_fee → v2_job_client_fees・KANOAだけが見られる）', v1['sum_client_fee'], v2['sum_client_fee'], '円・税抜（2026-10-29 決定）')
     row('公開（assignments → v2_job_shares）', v1['assignments'] - acct['assignment']['skipped'], v2['shares'], f'対象外の会社の {acct["assignment"]["skipped"]} 行を除く')
     row('　うち公開中', v1['assignments_published'], v2['shares_published'], '')
     row('会社ごとの紹介料の上書き合計（suc_override → fee_override）', v1['sum_suc_override'], v2['sum_fee_override'], '円')
-    row('求職者（referrals → v2_candidates）', v1['referrals'], v2['candidates_from_referrals'], '')
+    row('求職者（referrals → v2_candidates）', v1['referrals'], v2['candidates_from_referrals'], f'対象外の会社の {v1["excluded_referrals"]} 件を除く')
     row('選考（referrals → v2_applications）', v1['referrals'], v2['applications'], '状態の対応は 3 章')
     pend = v1['intake_by_status'].get('pending', 0); dupi = v1['intake_pending_same_phone_same_agency']
     row('紹介フォームの確認待ち → 新しい求職者（選考なし）', pend - dupi, v2['candidates_from_intake'],
@@ -164,7 +165,9 @@ def report(before_f, after_f, run_f, copy_f, tests_f=None):
     a(f'- V1 で入社日が入っている送客は {jr["joined_on_set_total"]} 件。V1 の status はすべて offer のまま。入社日が {jr["joined_until"]} より後のものは'
       '「入社待ち」（最後の段階「入社」の予定日＝V1 の入社日）として移し、報酬はまだ作らない。その日を過ぎてから流し直すと報酬が作られる')
     a(f'- 返金規定を持つ求人: {v2["jobs_with_refund_policy"]} 件（V1 の文章から「◯か月以内 ◯%」を読み取り。経歴詐称の全額返金は V2 に項目が無いため対象外）')
-    a(f'- V1 の client_fee（求人企業が KANOA に払う額）は V2 に置き場が無いため移していない。合計 {_n(v1["sum_client_fee"])} 円（求人4件分）')
+    a(f'- V1 の client_fee（求人企業が KANOA に払う額）は、KANOA だけが見られる v2_job_client_fees に移した（2026-10-29 決定）。合計 {_n(v1["sum_client_fee"])} 円')
+    a(f'- 対象外の会社（KA999・RE999・PT000）の分は移していない: 送客 {v1["excluded_referrals"]} 件・書類 {v1["excluded_documents"]} 件・連絡 {v1["excluded_messages_with_ref"]} 件')
+    a('- V1 の文字のリアクション（「承知しました」など）は ✅ に置き換えた（2026-10-29 決定）')
     a(f'- V1 の送客報酬（referral_reward）合計 {_n(v1["sum_referral_reward"])} 円・会社ごとの上書き（ref_override）{v1["ref_override_set"]} 件 → V2 に送客報酬は無い（設計書14）')
     a('')
     a('## 6. 書類ファイルのコピー（candidate-docs → v2-files）')

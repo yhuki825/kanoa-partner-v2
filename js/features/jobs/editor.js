@@ -15,15 +15,16 @@ export async function openJobEditor(job, onDone) {
     sb().from('v2_companies').select('id,code,name').eq('tier', 1).eq('status', 'active').order('code'),
   ]);
   if (e1 || e2) throw userError(e1 || e2, '求人企業・パートナーを読み込めませんでした');
-  let fee = null, shares = [], refund = null;
+  let fee = null, shares = [], refund = null, clientFee = null;
   if (job) {
-    const [{ data: f }, { data: s }, { data: rp, error: e3 }] = await Promise.all([
+    const [{ data: f }, { data: s }, { data: rp, error: e3 }, { data: cf }] = await Promise.all([
       sb().from('v2_job_kanoa_fees').select('*').eq('job_id', job.id).maybeSingle(),
       sb().from('v2_job_shares').select('*').eq('job_id', job.id),
       sb().from('v2_job_refund_policies').select('policy,version').eq('job_id', job.id).maybeSingle(),
+      sb().from('v2_job_client_fees').select('fee').eq('job_id', job.id).maybeSingle(),
     ]);
     if (e3) throw userError(e3, '返金規定を読み込めませんでした');
-    fee = f; shares = s || []; refund = rp;
+    fee = f; shares = s || []; refund = rp; clientFee = cf;
   }
   const refundRow = (p = {}) => `
     <div class="refund-row">
@@ -62,6 +63,10 @@ export async function openJobEditor(job, onDone) {
       <fieldset class="field span2"><legend>選考中のチェック</legend>
         <label class="check"><input type="checkbox" name="spi" ${j.checks?.spi ? 'checked' : ''}> SPI</label>
         <label class="check"><input type="checkbox" name="compliance" ${j.checks?.compliance ? 'checked' : ''}> コンプライアンスチェック</label></fieldset>
+
+      <h3 class="span2">求人企業からの紹介料（KANOAの受取額）</h3>
+      <div class="field"><label for="j-cfee">紹介料（税抜・円）</label><input id="j-cfee" name="client_fee" type="number" min="0" step="1" inputmode="numeric" value="${clientFee?.fee ?? ''}"></div>
+      <p class="hint field">KANOAだけが見られる欄です。パートナーには表示されません。</p>
 
       <h3 class="span2">紹介料と公開先（KANOA → 1次パートナー）</h3>
       <div class="field"><label for="j-fee">紹介料（基本額・円）</label><input id="j-fee" name="fee" type="number" min="0" step="1" inputmode="numeric" value="${fee?.fee ?? ''}"></div>
@@ -124,6 +129,7 @@ export async function openJobEditor(job, onDone) {
       // 入力の確認は、何かを保存する前にまとめて行う（途中まで保存されて残らないように）
       const policy = readPolicy();
       const feeNum = parseYen(form.querySelector('[name="fee"]'), '紹介料（基本額）');
+      const clientFeeNum = parseYen(form.querySelector('[name="client_fee"]'), '求人企業からの紹介料');
       const ovrOf = Object.fromEntries(tier1.map((c) => [c.id, parseYen(form.querySelector(`[name="ovr_${c.id}"]`), `${c.name}への紹介料`)]));
       let clientId = f.get('client_id');
       if (clientId === '__new') {
@@ -157,6 +163,14 @@ export async function openJobEditor(job, onDone) {
       if (feeNum != null) {
         const { error } = await sb().from('v2_job_kanoa_fees').upsert({ job_id: saved.id, fee: feeNum }, { onConflict: 'job_id' });
         if (error) throw userError(error, '紹介料を保存できませんでした');
+      }
+      // 求人企業からの紹介料（KANOAだけが見られる表。空欄にしたら消す）
+      if (clientFeeNum != null) {
+        const { error } = await sb().from('v2_job_client_fees').upsert({ job_id: saved.id, fee: clientFeeNum }, { onConflict: 'job_id' });
+        if (error) throw userError(error, '求人企業からの紹介料を保存できませんでした');
+      } else if (clientFee) {
+        const { error } = await sb().from('v2_job_client_fees').delete().eq('job_id', saved.id);
+        if (error) throw userError(error, '求人企業からの紹介料を消せませんでした');
       }
       // 公開先（チェックあり=公開、外した会社は非公開に）
       const checked = new Set(f.getAll('share'));

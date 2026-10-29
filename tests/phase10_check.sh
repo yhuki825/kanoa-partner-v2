@@ -59,7 +59,7 @@ print("ERR" if d is None else "|".join("%s:%s:%s" % (r["line"], r["result"], (r[
 # SQLのエラーコード（ERROR:  P0400: … の P0400）。エラーでなければ none
 errc(){ python3 -c 'import json,sys,re;d=json.load(sys.stdin);m=re.search(r"ERROR:\s+([0-9A-Z]{5}):",d.get("message","")) if isinstance(d,dict) else None;print(m.group(1) if m else ("none" if isinstance(d,list) else "ERR:"+str(d)[:120]))'; }
 NEWC="テスト一括登録会社（自動削除予定）"
-OKROW='{"line":2,"client":"'$NEWC'","title":"一括A","description":"説明","fee":300000,"shares":"all","refund":[{"months":3,"rate":50},{"months":1,"rate":100}],"spi":true,"compliance":false,"flow":[],"entry_requirements":["phone","resume"]}'
+OKROW='{"line":2,"client":"'$NEWC'","title":"一括A","description":"説明","fee":300000,"client_fee":350000,"shares":"all","refund":[{"months":3,"rate":50},{"months":1,"rate":100}],"spi":true,"compliance":false,"flow":[],"entry_requirements":["phone","resume"]}'
 OKROW2='{"line":3,"client":"'$NEWC'","title":"一括B","status":"一時停止","shares":["A99999"],"flow":["書類選考","面接"]}'
 SKIPROW='{"line":4,"client":"テスト求人企業（自動削除予定）","title":"テスト営業職（自動削除予定）"}'
 NACT=$(one "select count(*) from v2_companies where tier=1 and status='active'")
@@ -75,6 +75,7 @@ ok "空の求人企業・求人名はエラー" "$(imp '[{"line":5,"client":" ",
 ok "状態の誤りはエラー" "$(imp '[{"line":6,"client":"x社","title":"y","status":"休止"}]' false | rowsum)" "6:error:状態は「募集"
 ok "公開先に知らない会社コードはエラー" "$(imp '[{"line":7,"client":"x社","title":"y","shares":["Z99999"]}]' false | rowsum)" "7:error:公開先に1次"
 ok "返金規定の範囲外（月数0）はエラー" "$(imp '[{"line":8,"client":"x社","title":"y","refund":[{"months":0,"rate":50}]}]' false | rowsum)" "8:error:返金規定の月"
+ok "求人企業からの紹介料の小数はエラー" "$(imp '[{"line":11,"client":"x社","title":"y","client_fee":2.5}]' false | rowsum)" "11:error:求人企業から"
 ok "紹介料の小数はエラー" "$(imp '[{"line":9,"client":"x社","title":"y","fee":1.5}]' false | rowsum)" "9:error:紹介料は0以"
 ok "知らない必須項目はエラー" "$(imp '[{"line":10,"client":"x社","title":"y","entry_requirements":["color"]}]' false | rowsum)" "10:error:エントリー時"
 ok "ひな形の見本の行はエラー" "$(imp '[{"line":2,"client":"（例）株式会社サンプル","title":"y"}]' false | rowsum)" "2:error:ひな形の見本"
@@ -98,9 +99,22 @@ ok "登録: 一括A の紹介料・公開先（全社＝利用中の1次全社�
 ok "登録: 一括B は一時停止・公開先は A99999 だけ・紹介料と返金規定なし" \
   "$(sql "$REG select format('%s|%s|%s|%s|%s', j.status, j.flow, (select string_agg(co.code, ',') from v2_job_shares s join v2_companies co on co.id=s.company_id where s.job_id=j.id), (select count(*) from v2_job_kanoa_fees f where f.job_id=j.id), (select count(*) from v2_job_refund_policies p where p.job_id=j.id)) from v2_jobs j where j.title='一括B'; rollback;" | first)" \
   'paused|["書類選考", "面接"]|A99999|0|0'
+ok "登録: 一括A の求人企業からの紹介料（KANOAだけの表）／一括B は無し" \
+  "$(sql "$REG select format('%s|%s', (select fee from v2_job_client_fees f join v2_jobs j on j.id=f.job_id where j.title='一括A'), (select count(*) from v2_job_client_fees f join v2_jobs j on j.id=f.job_id where j.title='一括B')); rollback;" | first)" "350000|0"
 ok "登録済みの求人は二重に作らない" \
   "$(sql "$REG select count(*)::text from v2_jobs j join v2_clients c on c.id=j.client_id where c.name='テスト求人企業（自動削除予定）' and j.title='テスト営業職（自動削除予定）'; rollback;" | first)" "1"
 ok "取り消した後は何も残っていない" "$(one "select count(*) from v2_clients where name='$NEWC'")" "0"
+
+echo "== 求人企業からの紹介料はKANOAだけ =="
+B=$(login "$B_OWNER_ID" "$B_OWNER_PW")
+CFJOB=$(one "select j.id from v2_jobs j where j.title='テスト営業職（自動削除予定）'")
+ok "（準備）テスト求人に求人企業からの紹介料を置く（最後に消す）" "$(sql "insert into v2_job_client_fees(job_id, fee) values ('$CFJOB', 123456) on conflict (job_id) do update set fee = 123456, version = v2_job_client_fees.version" )" "[]"
+ok "（対照）RAには見える" "$(sql "begin; $SET_RA; select fee::text r from v2_job_client_fees where job_id='$CFJOB'; rollback;" | first)" "123456"
+ok "1次（A社の代表）には見えない" "$(curl -s "$BASE/rest/v1/v2_job_client_fees?select=fee&job_id=eq.$CFJOB" -H "apikey: $AK" -H "Authorization: Bearer $A")" "[]"
+ok "2次（B社の代表）には見えない" "$(curl -s "$BASE/rest/v1/v2_job_client_fees?select=fee&job_id=eq.$CFJOB" -H "apikey: $AK" -H "Authorization: Bearer $B")" "[]"
+ok "1次は書き込めない" "$(curl -s -X POST "$BASE/rest/v1/v2_job_client_fees" -H "apikey: $AK" -H "Authorization: Bearer $A" -H 'Content-Type: application/json' -d "$(j job_id "$CFJOB" fee '=1')" | code)" "42501"
+ok "未ログインでは読めない（表の権限ごと無い）" "$(curl -s "$BASE/rest/v1/v2_job_client_fees?select=fee" -H "apikey: $AK" | code)" "42501"
+ok "（後片付け）テスト求人の求人企業からの紹介料を消す" "$(sql "delete from v2_job_client_fees where job_id='$CFJOB'")" "[]"
 
 echo "== 画面のCSV読み取り =="
 NODE=$(node --input-type=module -e "

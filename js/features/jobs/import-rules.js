@@ -16,7 +16,8 @@ export const IMPORT_COLUMNS = [
   { key: 'entry_requirements', label: 'エントリー時必須項目', example: '電話番号／履歴書', note: '項目名を「／」で区切る。候補者名は常に必須' },
   { key: 'spi', label: 'SPI', example: '', note: '「○」で有り。空欄は無し' },
   { key: 'compliance', label: 'コンプライアンスチェック', example: '○', note: '「○」で有り。空欄は無し' },
-  { key: 'fee', label: '紹介料（基本額・円）', example: '300000', note: '税抜・半角数字（カンマ可）。空欄は未設定' },
+  { key: 'fee', label: '紹介料（基本額・円）', example: '300000', note: 'KANOA→1次パートナー。税抜・半角数字（カンマ可）。空欄は未設定' },
+  { key: 'client_fee', label: '求人企業からの紹介料（円）', example: '350000', note: '求人企業→KANOA（KANOAだけが見られる）。税抜・半角数字。空欄は未設定' },
   { key: 'shares', label: '公開先', example: '全社', note: '「全社」＝1次パートナー全社。会社コードを「／」で区切っても可。空欄は非公開' },
   { key: 'refund', label: '返金規定', example: '1か月以内100%／3か月以内50%', note: '「◯か月以内◯%」を「／」で区切る。空欄は返金なし' },
 ];
@@ -94,6 +95,12 @@ export function rowsToJobs(table) {
       if (/^\d+$/.test(feeRaw)) fee = Number(feeRaw);
       else errors.push(`紹介料は半角数字で入れてください（${get('fee')}）`);
     }
+    let clientFee = null;
+    const cfRaw = nfkc(get('client_fee')).replace(/[,\s円¥￥]/g, '');
+    if (cfRaw !== '') {
+      if (/^\d+$/.test(cfRaw)) clientFee = Number(cfRaw);
+      else errors.push(`求人企業からの紹介料は半角数字で入れてください（${get('client_fee')}）`);
+    }
     // 返金規定: 「1か月以内100%」「3ヶ月 50％」「1:100」など
     const refund = [];
     for (const part of splitList(nfkc(get('refund')))) {
@@ -116,7 +123,7 @@ export function rowsToJobs(table) {
       flow: splitList(get('flow')),
       entry_requirements: reqs,
       spi: yesNo('spi', 'SPI'), compliance: yesNo('compliance', 'コンプライアンスチェック'),
-      fee, shares, refund, errors,
+      fee, client_fee: clientFee, shares, refund, errors,
     };
   });
   if (!rows.length) return { fileErrors: ['見出しの下に求人の行がありません'], rows: [] };

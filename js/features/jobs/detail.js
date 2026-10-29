@@ -146,7 +146,9 @@ async function render(el, params) {
   a.querySelector('#j-edit')?.addEventListener('click', () => openJobEditor(job, reload).catch((e) => showError(e, '求人の編集')));
   a.querySelector('#j-apply')?.addEventListener('click', () => applyFlow(job).catch((e) => showError(e, '応募')));
 
-  const [offer, refundHtml] = await Promise.all([S.role === 'ca' ? frontOfferSection(job) : null, refundSection(job)]);
+  // 求人企業からの紹介料（KANOAの受取額）: KANOAだけが見られる（DBの権限もRAだけ）
+  const clientFeeP = S.role === 'ra' ? sb().from('v2_job_client_fees').select('fee').eq('job_id', job.id).maybeSingle() : Promise.resolve({ data: null });
+  const [offer, refundHtml, { data: clientFee }] = await Promise.all([S.role === 'ca' ? frontOfferSection(job) : null, refundSection(job), clientFeeP]);
   el.innerHTML = `
     <div class="detail-grid">
       <section class="card">
@@ -169,6 +171,11 @@ async function render(el, params) {
           <p class="hint">${S.role === 'ra' ? 'KANOA→1次パートナーの基本額。会社ごとの額は「編集」から設定できます。'
             : S.company.tier === 1 ? 'KANOAからあなたの会社への紹介料です。' : 'アップライン企業があなたの会社向けに設定した表示額です。'}</p>
         </section>
+        ${S.role === 'ra' ? `<section class="card fee-card">
+          <h2>求人企業からの紹介料</h2>
+          <p class="fee-big">${clientFee?.fee == null ? '未設定' : fmtYen(clientFee.fee)}</p>
+          <p class="hint">求人企業からKANOAへの紹介料（税抜）。KANOAだけに表示されます。</p>
+        </section>` : ''}
         <section class="card">
           <h2>エントリー時必須項目</h2>
           <ul class="req-list">${(job.entry_requirements || []).map((k) => `<li>${esc(fieldLabel(k))}</li>`).join('')}</ul>
