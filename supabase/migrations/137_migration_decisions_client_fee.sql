@@ -591,7 +591,7 @@ begin
     'agencies', (select count(*) from agencies),
     'projects', (select count(*) from projects),
     'assignments', (select count(*) from assignments),
-    'assignments_published', (select count(*) from assignments where published),
+    'assignments_published', (select count(*) from assignments where published and agency_id not in (select id from agencies where code in ('KA999','RE999','PT000'))),
     -- 移す対象（移さない会社 KA999・RE999・PT000 の分を除く。会社コードで数え、移行の記録は通さない）
     'referrals', (select count(*) from referrals where agency_id not in (select id from agencies where code in ('KA999','RE999','PT000'))),
     'excluded_referrals', (select count(*) from referrals where agency_id in (select id from agencies where code in ('KA999','RE999','PT000'))),
@@ -723,7 +723,7 @@ begin
   -- 会社ごと（会社コード経由。移行の記録を通さない）: V1 の送客 ↔ V2 の選考、V1 の送客＋確認待ちの紹介フォーム（重複を除く）↔ V2 の求職者
   select jsonb_agg(jsonb_build_object('code', cc.code, 'v1_referrals', r.n, 'v2_applications', ap.n,
                                       'v1_expected_candidates', r.n + ik.n, 'v2_candidates', ca.n) order by cc.code) into pa
-  from v2_v1_company_codes cc join agencies a on a.id = cc.agency_id
+  from v2_v1_company_codes cc join agencies a on a.id = cc.agency_id and a.id not in (select id from agencies where code in ('KA999','RE999','PT000'))
   left join v2_companies co on co.code = cc.code
   cross join lateral (select count(*) n from referrals where agency_id = a.id) r
   cross join lateral (select count(*) n from intake i where i.agency_id = a.id and i.status = 'pending'
